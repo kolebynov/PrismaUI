@@ -8,6 +8,7 @@
 #include "Core.h"
 #include "ImeHelper.h"
 #include "Utils/Encoding.h"
+#include "Utils/PointerLinkedList.h"
 #include "Utils/WinKeyHandler/WinKeyHandler.h"
 #include "include/internal/cef_types.h"
 #pragma comment(lib, "comctl32.lib")
@@ -403,37 +404,37 @@ namespace PrismaUI {
         return singleton;
     }
 
+    static bool NeedToDiscardEvent(const RE::InputEvent* event) {
+        return event->GetEventType() == RE::INPUT_EVENT_TYPE::kButton && event->AsButtonEvent()->GetDevice() == RE::INPUT_DEVICE::kMouse;
+    }
+
     // The vanilla arrow is moved by CursorMenu's MenuEventHandler, which normally runs inside
     // MenuControls. While a Prisma view holds focus PrismaUI swallows input before MenuControls reaches it
     // (see the kStop in ProcessEvent), so the cursor handler has to be driven directly - otherwise the
     // arrow freezes and Prisma views lose their mouse position.
-    static void DriveVanillaCursor(RE::InputEvent* event) {
+    static bool DriveVanillaCursor(RE::InputEvent* event) {
         auto ui = RE::UI::GetSingleton();
         if (!ui) {
-            return;
+            return false;
         }
 
         auto cursorMenu = ui->GetMenu<RE::CursorMenu>();
         auto* handler = cursorMenu ? cursorMenu->AsMenuEventHandler() : nullptr;
         if (!handler || !handler->CanProcess(event)) {
-            return;
+            return false;
         }
 
         switch (event->GetEventType()) {
             case RE::INPUT_EVENT_TYPE::kMouseMove:
                 handler->ProcessMouseMove(event->AsMouseMoveEvent());
-                break;
+                return true;
 
             case RE::INPUT_EVENT_TYPE::kThumbstick:
                 handler->ProcessThumbstick(event->AsThumbstickEvent());
-                break;
-
-            case RE::INPUT_EVENT_TYPE::kButton:
-                handler->ProcessButton(event->AsButtonEvent());
-                break;
+                return true;
 
             default:
-                break;
+                return false;
         }
     }
 
@@ -450,9 +451,9 @@ namespace PrismaUI {
         }
 
         auto currentScreenSize = renderManager->GetScreenSize();
-        auto hasKeyboardEvent = false;
+        PointerLinkedList eventList{const_cast<RE::InputEvent**>(a_event)};
 
-        for (auto event = *a_event; event; event = event->next) {
+        for (auto it = eventList.begin(); it != eventList.end();) {
             // Vanilla menus underneath must not react to the mouse while a Prisma view is focused, and some
             // of them (MapMenu marker hover) hit-test MenuCursor every frame instead of reacting to input
             // events. So the game keeps seeing _fixedCursor*, the position the cursor had when focus
@@ -462,7 +463,13 @@ namespace PrismaUI {
             cursor->cursorPosX = _cursorX;
             cursor->cursorPosY = _cursorY;
 
-            DriveVanillaCursor(event);
+            auto event = &*it;
+            if (DriveVanillaCursor(event) || NeedToDiscardEvent(event)) {
+                it = eventList.remove(it);
+            }
+            else {
+                ++it;
+            }
 
             const float liveX = cursor->cursorPosX;
             const float liveY = cursor->cursorPosY;
@@ -490,12 +497,7 @@ namespace PrismaUI {
 
                 case RE::INPUT_EVENT_TYPE::kButton: {
                     auto buttonEvent = event->AsButtonEvent();
-                    if (!buttonEvent) {
-                        break;
-                    }
-
-                    if (buttonEvent->GetDevice() != RE::INPUT_DEVICE::kMouse) {
-                        hasKeyboardEvent = true;
+                    if (!buttonEvent || buttonEvent->GetDevice() != RE::INPUT_DEVICE::kMouse) {
                         break;
                     }
 
@@ -575,7 +577,7 @@ namespace PrismaUI {
             }
         }
 
-        return hasKeyboardEvent ? RE::BSEventNotifyControl::kContinue : RE::BSEventNotifyControl::kStop;
+        return RE::BSEventNotifyControl::kContinue;
     }
 
     bool InputHandler::Initialize(HWND gameHwnd,
