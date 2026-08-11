@@ -18,7 +18,7 @@ namespace PrismaUI::ViewManager {
     void Show(Core::PrismaViewId viewId);
     void Hide(Core::PrismaViewId viewId);
     bool IsHidden(Core::PrismaViewId viewId);
-    bool Focus(Core::PrismaViewId viewId, bool pauseGame = false, bool disableFocusMenu = false);
+    bool Focus(Core::PrismaViewId viewId, bool pauseGame = false);
     void Unfocus(Core::PrismaViewId viewId);
     bool HasFocus(Core::PrismaViewId viewId);
     bool ViewHasInputFocus(Core::PrismaViewId viewId);

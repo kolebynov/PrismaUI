@@ -47,11 +47,11 @@ bool PluginAPI::PrismaUIInterface::HasFocus(PrismaView view) noexcept {
     return PrismaUI::ViewManager::HasFocus(view);
 }
 
-bool PluginAPI::PrismaUIInterface::Focus(PrismaView view, bool pauseGame, bool disableFocusMenu) noexcept {
+bool PluginAPI::PrismaUIInterface::Focus(PrismaView view, bool pauseGame, bool) noexcept {
     if (!view) {
         return false;
     }
-    return PrismaUI::ViewManager::Focus(view, pauseGame, disableFocusMenu);
+    return PrismaUI::ViewManager::Focus(view, pauseGame);
 }
 
 void PluginAPI::PrismaUIInterface::Unfocus(PrismaView view) noexcept {

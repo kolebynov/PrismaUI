@@ -14,12 +14,10 @@ namespace PrismaUI::ViewManager {
         // FocusMenu open, optional pause, input capture). Caller already holds the target
         // viewData and has cleared focus on any other focused views.
         void ApplyFocusSideEffects(Core::PrismaViewId viewId, const std::shared_ptr<PrismaView>& viewData,
-                                   bool pauseGame, bool disableFocusMenu) {
+                                   bool pauseGame) {
             PrismaUI::InputHandler::GetSingleton().EnableInputCapture(viewId);
 
-            if (!disableFocusMenu) {
-                Menus::PrismaUIMenu::Focus();
-            }
+            Menus::PrismaUIMenu::Focus();
 
             if (auto* controlMap = RE::ControlMap::GetSingleton()) {
                 controlMap->ToggleControls(RE::UserEvents::USER_EVENT_FLAG::kWheelZoom, false, false);
@@ -43,8 +41,7 @@ namespace PrismaUI::ViewManager {
         // Apply the native side-effects of unfocusing: blur the iframe via CEF, restore
         // controls, optionally close FocusMenu, drop the pause counter. closeFocusMenu==false
         // is used when transferring focus between Prisma views so the focus surface stays open.
-        void ApplyUnfocusSideEffects(Core::PrismaViewId viewId, const std::shared_ptr<PrismaView>& viewData,
-                                     bool closeFocusMenu) {
+        void ApplyUnfocusSideEffects(Core::PrismaViewId viewId, const std::shared_ptr<PrismaView>& viewData) {
             if (viewData->isPaused.load()) {
                 if (auto* ui = RE::UI::GetSingleton()) {
                     if (ui->numPausesGame > 0) {
@@ -56,16 +53,12 @@ namespace PrismaUI::ViewManager {
             }
 
             PrismaUI::InputHandler::GetSingleton().DisableInputCapture(viewId);
-            if (closeFocusMenu) {
-                PrismaUI::InputHandler::GetSingleton().ClearImeState(viewId);
-            }
+            PrismaUI::InputHandler::GetSingleton().ClearImeState(viewId);
 
             Cef::CefRuntime::GetSingleton().BlurShellView(viewId);
             viewData->isFocused.store(false);
 
-            if (closeFocusMenu) {
-                Menus::PrismaUIMenu::Unfocus();
-            }
+            Menus::PrismaUIMenu::Unfocus();
 
             if (auto* controlMap = RE::ControlMap::GetSingleton()) {
                 controlMap->ToggleControls(RE::UserEvents::USER_EVENT_FLAG::kWheelZoom, true, false);
@@ -191,7 +184,7 @@ namespace PrismaUI::ViewManager {
             }
 
             if (viewData->isFocused.load()) {
-                ApplyUnfocusSideEffects(viewId, viewData, /*closeFocusMenu=*/true);
+                ApplyUnfocusSideEffects(viewId, viewData);
                 logger::info("Hide: View [{}] was focused; unfocused before hiding.", viewId);
             }
 
@@ -216,13 +209,13 @@ namespace PrismaUI::ViewManager {
         return views.find(viewId) != views.end();
     }
 
-    bool Focus(Core::PrismaViewId viewId, bool pauseGame, bool disableFocusMenu) {
+    bool Focus(Core::PrismaViewId viewId, bool pauseGame) {
         if (!IsValid(viewId)) {
             logger::warn("Focus: View ID [{}] not found.", viewId);
             return false;
         }
 
-        ViewOperationQueue::EnqueueOperation(viewId, [viewId, pauseGame, disableFocusMenu]() {
+        ViewOperationQueue::EnqueueOperation(viewId, [viewId, pauseGame]() {
             auto viewData = LookupView(viewId);
             if (!viewData) {
                 logger::warn("Focus: View [{}] disappeared before focus could be applied.", viewId);
@@ -256,17 +249,16 @@ namespace PrismaUI::ViewManager {
                     auto vd = LookupView(idToUnfocus);
                     if (!vd) return;
                     if (!vd->isFocused.load()) return;
-                    ApplyUnfocusSideEffects(idToUnfocus, vd, /*closeFocusMenu=*/false);
+                    ApplyUnfocusSideEffects(idToUnfocus, vd);
                     logger::info("Focus: View [{}] unfocused (focus switching).", idToUnfocus);
                 });
             }
 
             viewData->isFocused.store(true);
             Cef::CefRuntime::GetSingleton().FocusShellView(viewId);
-            ApplyFocusSideEffects(viewId, viewData, pauseGame, disableFocusMenu);
+            ApplyFocusSideEffects(viewId, viewData, pauseGame);
 
-            logger::info("Focus: View [{}] (iframe={}) focused: pauseGame={}, focusMenu={}", viewId,
-                         viewData->iframeName, pauseGame, !disableFocusMenu);
+            logger::info("Focus: View [{}] (iframe={}) focused: pauseGame={}", viewId, viewData->iframeName, pauseGame);
         });
 
         return true;
@@ -292,7 +284,7 @@ namespace PrismaUI::ViewManager {
                 return;
             }
 
-            ApplyUnfocusSideEffects(viewId, viewData, /*closeFocusMenu=*/true);
+            ApplyUnfocusSideEffects(viewId, viewData);
             logger::info("Unfocus: View [{}] (iframe={}) unfocused.", viewId, viewData->iframeName);
         });
     }
@@ -371,7 +363,7 @@ namespace PrismaUI::ViewManager {
         // If the view was focused, run the unfocus side-effects inline. The operation queue
         // is already drained, and the view has been removed from the map so no peer can race.
         if (viewDataToDestroy->isFocused.load()) {
-            ApplyUnfocusSideEffects(viewId, viewDataToDestroy, /*closeFocusMenu=*/true);
+            ApplyUnfocusSideEffects(viewId, viewDataToDestroy);
             logger::info("Destroy: View [{}] was focused; applied unfocus side-effects inline.", viewId);
         }
 

@@ -279,7 +279,7 @@ namespace {
             return;
         }
 
-        const bool focused = g_apiV3->Focus(g_testView, false, true);
+        const bool focused = g_apiV3->Focus(g_testView, true);
         logger::info("F4 focus toggle: focused mainView={} returned {}", g_testView, BoolText(focused));
     }
 
