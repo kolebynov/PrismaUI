@@ -263,6 +263,55 @@ namespace {
         }).detach();
     }
 
+    // F4 toggles focus on the main test view. PrismaUI swallows keyboard input (HWND subclass and the
+    // prepended input sink) while a view is focused, so neither a BSInputDeviceManager sink nor a WndProc
+    // hook would see the key that has to release focus. Polling the async key state is the only path that
+    // survives both states.
+    void ToggleMainViewFocus() {
+        if (!g_apiV3 || !g_testView) {
+            logger::warn("F4 focus toggle skipped: api={}, mainView={}", static_cast<void*>(g_apiV3), g_testView);
+            return;
+        }
+
+        if (g_apiV3->HasFocus(g_testView)) {
+            g_apiV3->Unfocus(g_testView);
+            logger::info("F4 focus toggle: unfocused mainView={}", g_testView);
+            return;
+        }
+
+        const bool focused = g_apiV3->Focus(g_testView, false, true);
+        logger::info("F4 focus toggle: focused mainView={} returned {}", g_testView, BoolText(focused));
+    }
+
+    [[nodiscard]] bool IsGameForeground() noexcept {
+        DWORD processId = 0;
+        ::GetWindowThreadProcessId(::GetForegroundWindow(), &processId);
+        return processId == ::GetCurrentProcessId();
+    }
+
+    void StartFocusToggleHotkey() {
+        static std::atomic_bool started = false;
+        bool expected = false;
+        if (!started.compare_exchange_strong(expected, true)) {
+            return;
+        }
+
+        logger::info("F4 focus toggle hotkey armed for mainView={}", g_testView);
+        std::thread([]() {
+            bool wasDown = false;
+            while (true) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(30));
+
+                const bool isDown = (::GetAsyncKeyState(VK_F4) & 0x8000) != 0 && IsGameForeground();
+                if (isDown && !wasDown) {
+                    ToggleMainViewFocus();
+                }
+
+                wasDown = isDown;
+            }
+        }).detach();
+    }
+
     [[nodiscard]] CallbackState* AsState(void* state) noexcept { return static_cast<CallbackState*>(state); }
 
     void LogState(const char* callbackName, void* state) {
@@ -520,6 +569,8 @@ namespace {
             logger::error("CreateViewV2 failed; remaining lifecycle API calls skipped");
             return;
         }
+
+        StartFocusToggleHotkey();
 
         g_apiV3->RegisterConsoleCallbackV2(g_testView, ConsoleCallback, &g_consoleState);
         g_apiV3->RegisterJSListenerV2(g_testView, "prismaApiTestEcho", ListenerCallback, &g_listenerState);
