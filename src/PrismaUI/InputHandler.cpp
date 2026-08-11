@@ -404,14 +404,24 @@ namespace PrismaUI {
         return singleton;
     }
 
+    // LMB/RMB/MMB are the buttons PrismaUI hands to CEF; 8/9 are the wheel pseudo-buttons.
+    constexpr std::uint32_t MOUSE_BUTTON_COUNT = 3;
+    constexpr std::uint32_t MOUSE_WHEEL_UP_ID_CODE = 8;
+    constexpr std::uint32_t MOUSE_WHEEL_DOWN_ID_CODE = 9;
+
     static bool NeedToDiscardEvent(const RE::InputEvent* event) {
-        return event->GetEventType() == RE::INPUT_EVENT_TYPE::kButton && event->AsButtonEvent()->GetDevice() == RE::INPUT_DEVICE::kMouse;
+        if (event->GetEventType() != RE::INPUT_EVENT_TYPE::kButton) {
+            return false;
+        }
+
+        const auto* buttonEvent = event->AsButtonEvent();
+        return buttonEvent && buttonEvent->GetDevice() == RE::INPUT_DEVICE::kMouse;
     }
 
     // The vanilla arrow is moved by CursorMenu's MenuEventHandler, which normally runs inside
-    // MenuControls. While a Prisma view holds focus PrismaUI swallows input before MenuControls reaches it
-    // (see the kStop in ProcessEvent), so the cursor handler has to be driven directly - otherwise the
-    // arrow freezes and Prisma views lose their mouse position.
+    // MenuControls. While a Prisma view holds focus PrismaUI strips mouse events out of the event list
+    // before MenuControls reaches it (see NeedToDiscardEvent), so the cursor handler has to be driven
+    // directly - otherwise the arrow freezes and Prisma views lose their mouse position.
     static bool DriveVanillaCursor(RE::InputEvent* event) {
         auto ui = RE::UI::GetSingleton();
         if (!ui) {
@@ -466,8 +476,7 @@ namespace PrismaUI {
             auto event = &*it;
             if (DriveVanillaCursor(event) || NeedToDiscardEvent(event)) {
                 it = eventList.remove(it);
-            }
-            else {
+            } else {
                 ++it;
             }
 
@@ -505,7 +514,7 @@ namespace PrismaUI {
                     const bool isPressed = buttonEvent->IsPressed();
                     const bool isUp = buttonEvent->IsUp();
 
-                    if (idCode <= 2) {
+                    if (idCode < MOUSE_BUTTON_COUNT) {
                         Cef::CefInputMouseButton button = Cef::CefInputMouseButton::Left;
                         switch (idCode) {
                             case 0:
@@ -542,7 +551,7 @@ namespace PrismaUI {
                             ev.clickCount = 1;
                             QueueInputEvent(ev);
                         }
-                    } else if (idCode == 8 || idCode == 9) {
+                    } else if (idCode == MOUSE_WHEEL_UP_ID_CODE || idCode == MOUSE_WHEEL_DOWN_ID_CODE) {
                         if (isPressed) {
                             int scrollPixelSize = 28;
                             Core::PrismaViewId focusedViewId;
@@ -565,7 +574,7 @@ namespace PrismaUI {
                             ev.y = cursorY;
                             ev.modifiers = GetMouseModifiers();
                             ev.deltaX = 0;
-                            ev.deltaY = idCode == 9 ? -scrollAmount : scrollAmount;
+                            ev.deltaY = idCode == MOUSE_WHEEL_DOWN_ID_CODE ? -scrollAmount : scrollAmount;
                             QueueInputEvent(ev);
                         }
                     }

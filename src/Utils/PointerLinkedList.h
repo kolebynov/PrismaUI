@@ -6,21 +6,14 @@
 #include <type_traits>
 
 template <typename T>
-requires
-    std::same_as<T, std::remove_cvref_t<T>> &&
-    requires(T* x) {
-    { x->next } -> std::convertible_to<T*>;
+    requires std::same_as<T, std::remove_cvref_t<T>> && requires(T* x) {
+        { x->next } -> std::convertible_to<T*>;
     }
-class PointerLinkedList
-{
+class PointerLinkedList {
 public:
-    explicit PointerLinkedList(T** head) :
-        _head(head)
-    {
-    }
+    explicit PointerLinkedList(T** head) : _head(head) {}
 
-    class Iterator
-    {
+    class Iterator {
     public:
         using iterator_concept = std::forward_iterator_tag;
         using iterator_category = std::forward_iterator_tag;
@@ -31,29 +24,18 @@ public:
 
         Iterator() = default;
 
-        explicit Iterator(T* node) :
-            _node(node)
-        {
-        }
+        explicit Iterator(T* node) : _node(node) {}
 
-        reference operator*() const
-        {
-            return *_node;
-        }
+        reference operator*() const { return *_node; }
 
-        pointer operator->() const
-        {
-            return _node;
-        }
+        pointer operator->() const { return _node; }
 
-        Iterator& operator++()
-        {
+        Iterator& operator++() {
             _node = _node->next;
             return *this;
         }
 
-        Iterator operator++(int)
-        {
+        Iterator operator++(int) {
             auto copy = *this;
             ++(*this);
             return copy;
@@ -65,18 +47,11 @@ public:
         T* _node = nullptr;
     };
 
-    Iterator begin() const
-    {
-        return Iterator(*_head);
-    }
+    Iterator begin() const { return Iterator(*_head); }
 
-    Iterator end() const
-    {
-        return Iterator(nullptr);
-    }
+    Iterator end() const { return Iterator(nullptr); }
 
-    Iterator remove(Iterator it)
-    {
+    Iterator remove(Iterator it) {
         auto* node = it.operator->();
         if (!node || !_head || !*_head) {
             return end();

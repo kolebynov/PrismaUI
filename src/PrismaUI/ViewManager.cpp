@@ -10,6 +10,33 @@ namespace PrismaUI::ViewManager {
     using namespace Core;
 
     namespace {
+        // Vanilla cancels a held attack/cast through PlayerControls' menu-mode transition, not through the
+        // button release: the release never reaches AttackBlockHandler because no menu-mode input context
+        // maps the attack buttons (see Interface/Controls/PC/controlmap.txt), so CanProcess rejects it.
+        // Instead, entering menu mode arms triggerReleaseEvent on every held-state handler, and leaving it
+        // makes the next PlayerControls::ProcessEvent(InputEvent**) synthesize a "ForceRelease" ButtonEvent
+        // for the armed handlers, which is what actually stops the cast. Verified by disassembling
+        // SkyrimSE 1.5.97: the PlayerControls MenuModeChangeEvent sink branches into sub_140705960
+        // (arm) / flags data+0x2A, consumed as sub_1407059F0 (broadcast) from the input sink.
+        //
+        // PrismaUIMenu is kAlwaysOpen and only becomes menu-mode-hungry on focus, so the engine never
+        // raises that event for us and the latch is never cleared - the player keeps casting after
+        // releasing the mouse inside a focused view. Drive the same transition on the main thread; the
+        // sink only reads the mode, but pass the real menu name anyway.
+        void NotifyPlayerControlsMenuMode(RE::MenuModeChangeEvent::Mode mode) {
+            SKSE::GetTaskInterface()->AddTask([mode] {
+                auto* controls = RE::PlayerControls::GetSingleton();
+                if (!controls) {
+                    return;
+                }
+
+                RE::MenuModeChangeEvent event{};
+                event.menu = Menus::PrismaUIMenu::MENU_NAME;
+                event.mode = mode;
+                static_cast<RE::BSTEventSink<RE::MenuModeChangeEvent>*>(controls)->ProcessEvent(&event, nullptr);
+            });
+        }
+
         // Apply the native side-effects of focusing a Prisma view (control-map disable,
         // FocusMenu open, optional pause, input capture). Caller already holds the target
         // viewData and has cleared focus on any other focused views.
@@ -18,6 +45,7 @@ namespace PrismaUI::ViewManager {
             PrismaUI::InputHandler::GetSingleton().EnableInputCapture(viewId);
 
             Menus::PrismaUIMenu::Focus();
+            NotifyPlayerControlsMenuMode(RE::MenuModeChangeEvent::Mode::kDisplayed);
 
             if (auto* controlMap = RE::ControlMap::GetSingleton()) {
                 controlMap->ToggleControls(RE::UserEvents::USER_EVENT_FLAG::kWheelZoom, false, false);
@@ -59,6 +87,7 @@ namespace PrismaUI::ViewManager {
             viewData->isFocused.store(false);
 
             Menus::PrismaUIMenu::Unfocus();
+            NotifyPlayerControlsMenuMode(RE::MenuModeChangeEvent::Mode::kHidden);
 
             if (auto* controlMap = RE::ControlMap::GetSingleton()) {
                 controlMap->ToggleControls(RE::UserEvents::USER_EVENT_FLAG::kWheelZoom, true, false);
