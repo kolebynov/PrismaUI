@@ -6,13 +6,6 @@
 #include "Utils/D3DTextureCopy.h"
 
 namespace PrismaUI::Cef {
-    namespace {
-        // The wait below only ever spans one frame of queued GPU work. Anything past
-        // this means the GPU or the present loop is wedged; time out rather than pin
-        // the CEF UI thread, which also drains PostToCefUi work such as input.
-        constexpr DWORD CopyFenceWaitTimeoutMs = 100;
-    }
-
     OverlayTexture::~OverlayTexture() {
         if (_copyCompleteEvent) {
             CloseHandle(_copyCompleteEvent);
@@ -151,9 +144,9 @@ namespace PrismaUI::Cef {
     }
 
     bool OverlayTexture::WaitForCopyCompletion(std::uint64_t copyFenceValue) const {
-        if (WaitForSingleObject(_copyCompleteEvent, CopyFenceWaitTimeoutMs) != WAIT_OBJECT_0) {
-            logger::warn("CEF overlay copy fence wait timed out after {}ms (value {}, timeout).",
-                         CopyFenceWaitTimeoutMs, copyFenceValue);
+        auto waitResult = WaitForSingleObject(_copyCompleteEvent, INFINITE);
+        if (waitResult != WAIT_OBJECT_0) {
+            logger::warn("CEF overlay copy fence wait failed, code: {} (value {})", waitResult, copyFenceValue);
             return false;
         }
 
