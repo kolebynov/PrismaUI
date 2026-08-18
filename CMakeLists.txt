@@ -85,7 +85,11 @@ file(GLOB PRISMAUI_CEF_SUBPROCESS_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/Subprocess/*.cpp"
 )
 
-list(REMOVE_ITEM SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/Subprocess/SubprocessMain.cpp")
+# GPU-process-only translation units: they never run inside PrismaUI.dll.
+list(REMOVE_ITEM SOURCES
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/Subprocess/SubprocessMain.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/Subprocess/GpuMemoryResidency.cpp"
+)
 
 # Create source groups for IDE
 source_group(
@@ -133,6 +137,8 @@ target_link_libraries(PrismaUICefSubprocess
     PRIVATE
     libcef_dll_wrapper
     libcef_lib
+    dxgi      # Required for the GPU-process video memory reservation (GpuMemoryResidency)
+    shell32   # Required for CommandLineToArgvW (GpuMemoryResidency)
     ${CEF_STANDARD_LIBS}
 )
 
