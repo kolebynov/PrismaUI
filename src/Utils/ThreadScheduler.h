@@ -40,7 +40,6 @@ public:
     }
 
 private:
-    ResourceLock<std::queue<std::move_only_function<void()>>> _taskQueueLock{
-        std::queue<std::move_only_function<void()>>()};
+    ResourceLock<std::queue<std::move_only_function<void()>>> _taskQueueLock{};
     std::thread::id _threadId{};
 };

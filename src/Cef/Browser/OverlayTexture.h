@@ -99,6 +99,6 @@ namespace PrismaUI::Cef {
 
         HANDLE _copyCompleteEvent = nullptr;
         Microsoft::WRL::ComPtr<ID3D11Fence> _copyFence;
-        ResourceLock<PendingFrame> _pendingFrame{{}};
+        ResourceLock<PendingFrame> _pendingFrame{};
     };
 }

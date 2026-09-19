@@ -1,27 +1,42 @@
 ﻿#pragma once
 
+#include <concepts>
 #include <mutex>
+#include <type_traits>
+#include <utility>
 
 template <class T>
 class ResourceLock {
 public:
-    class Lock {
+    // TValue carries the constness of the ResourceLock the lock was acquired from.
+    template <class TValue>
+    class BasicLock {
     public:
-        Lock(std::mutex& mutex, T& value) : guard_(mutex), value_(&value) {}
+        BasicLock(std::mutex& mutex, TValue& value) : guard_(mutex), value_(&value) {}
 
-        T& operator*() const noexcept { return *value_; }
-        T* operator->() const noexcept { return value_; }
+        TValue& operator*() const noexcept { return *value_; }
+        TValue* operator->() const noexcept { return value_; }
 
     private:
         std::lock_guard<std::mutex> guard_;
-        T* value_;
+        TValue* value_;
     };
 
-    explicit ResourceLock(T value) : value_(std::move(value)) {}
+    using Lock = BasicLock<T>;
+    using ConstLock = BasicLock<const T>;
+
+    ResourceLock()
+        requires std::is_default_constructible_v<T>
+    = default;
+
+    template <class... TArgs>
+        requires std::constructible_from<T, TArgs...>
+    explicit ResourceLock(std::in_place_t, TArgs&&... args) : value_(std::forward<TArgs>(args)...) {}
 
     Lock Acquire() { return Lock(mutex_, value_); }
+    ConstLock Acquire() const { return ConstLock(mutex_, value_); }
 
 private:
-    std::mutex mutex_;
+    mutable std::mutex mutex_;
     T value_;
 };
