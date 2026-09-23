@@ -353,6 +353,7 @@ namespace PrismaUI::Cef {
         logger::info("CEF log file: {}", logFile.string());
         logger::info("CEF shell URL: {}", shellUrlLog);
         logger::info("CEF message loop mode: multi_threaded_message_loop=true");
+        logger::info("CEF renderer priority: backgrounding disabled, helper power throttling opted out.");
 
         CefMainArgs mainArgs(GetModuleHandleW(nullptr));
         CefSettings settings;

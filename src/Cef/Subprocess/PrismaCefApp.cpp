@@ -27,6 +27,10 @@ namespace PrismaUI::Cef {
         command_line->AppendSwitchWithValue("use-gl", "angle");
         command_line->AppendSwitchWithValue("use-angle", "d3d11");
 
+        // Chromium otherwise lowers the renderer's process priority (and on Windows 11 applies
+        // EcoQoS) whenever it considers the renderer backgrounded.
+        command_line->AppendSwitch("disable-renderer-backgrounding");
+
         // Force Chromium's GPU process onto the same D3D11 adapter Skyrim renders on. On
         // hybrid-GPU machines Chromium otherwise composites OSR output on a different
         // adapter, so OnAcceleratedPaint's shared NT texture cannot be opened on our
