@@ -13,6 +13,7 @@
 #include <cstddef>
 #include <cstring>
 #include <filesystem>
+#include <future>
 #include <limits>
 #include <map>
 #include <mutex>
@@ -20,6 +21,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <thread>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -60,7 +62,7 @@ namespace {
     }
 
     // Derives the "<HighPart>,<LowPart>" decimal LUID of the DXGI adapter backing
-    // `device` so Chromium's GPU process can be pinned to the same adapter Skyrim
+    // `device` so Chromium's in-process GPU thread can be pinned to the same adapter Skyrim
     // renders on (use-adapter-luid). Returns an empty string when the adapter LUID
     // cannot be resolved, leaving CEF on its default GPU selection.
     std::string BuildAdapterLuidSwitch(ID3D11Device* device) {
@@ -94,8 +96,7 @@ namespace {
         }
 
         std::string value = std::to_string(desc.AdapterLuid.HighPart) + "," + std::to_string(desc.AdapterLuid.LowPart);
-        logger::info("Pinning CEF GPU process to Skyrim render adapter '{}' (LUID {}).", NarrowAscii(desc.Description),
-                     value);
+        logger::info("Pinning CEF GPU to Skyrim render adapter '{}' (LUID {}).", NarrowAscii(desc.Description), value);
         return value;
     }
 
@@ -252,6 +253,7 @@ namespace PrismaUI::Cef {
         mutable std::mutex stateMutex;
         CefRefPtr<CefApp> app;
         CefRefPtr<CefOsrClient> client;
+        std::thread cefThread;
         std::atomic<bool> initializeAttempted = false;
         std::atomic<bool> initialized = false;
         std::atomic<bool> shuttingDown = false;
@@ -294,6 +296,15 @@ namespace PrismaUI::Cef {
         std::mutex invokeMutex;
         std::atomic<uint64_t> nextRequestId = 1;
         std::map<uint64_t, InvokeEntry> pendingInvokes;
+
+        // Shutdown joins cefThread. It stays joinable only when Shutdown never ran or skipped
+        // CefShutdown (browser-close timeout); detach so static destruction at process exit
+        // does not std::terminate.
+        ~Impl() {
+            if (cefThread.joinable()) {
+                cefThread.detach();
+            }
+        }
     };
 
     CefRuntime::CefRuntime() : _impl(std::make_unique<Impl>()) {}
@@ -352,14 +363,14 @@ namespace PrismaUI::Cef {
         logger::info("CEF locales path: {}", localesPath.string());
         logger::info("CEF log file: {}", logFile.string());
         logger::info("CEF shell URL: {}", shellUrlLog);
-        logger::info("CEF message loop mode: multi_threaded_message_loop=true");
+        logger::info("CEF message loop mode: dedicated PrismaUI CEF UI thread (CefRunMessageLoop), in-process-gpu.");
         logger::info("CEF renderer priority: backgrounding disabled, helper power throttling opted out.");
 
         CefMainArgs mainArgs(GetModuleHandleW(nullptr));
         CefSettings settings;
         settings.no_sandbox = true;
         settings.windowless_rendering_enabled = true;
-        settings.multi_threaded_message_loop = true;
+        settings.multi_threaded_message_loop = false;
         settings.log_severity = LOGSEVERITY_INFO;
         CefString(&settings.browser_subprocess_path).FromWString(subprocessPath.wstring());
         CefString(&settings.resources_dir_path).FromWString(resourcesPath.wstring());
@@ -369,9 +380,25 @@ namespace PrismaUI::Cef {
 
         _impl->app = CreatePrismaCefApp(BuildAdapterLuidSwitch(renderDevice));
         logger::info("Calling CefInitialize.");
-        if (!CefInitialize(mainArgs, settings, _impl->app, nullptr)) {
-            auto errorCode = CefGetExitCode();
-            logger::error("CefInitialize failed, exit code: {}", errorCode);
+        std::promise<bool> initPromise;
+        std::future<bool> initResult = initPromise.get_future();
+        _impl->cefThread =
+            std::thread([mainArgs, settings, app = _impl->app, initPromise = std::move(initPromise)]() mutable {
+                SetThreadDescription(GetCurrentThread(), L"PrismaUI CEF UI");
+                if (!CefInitialize(mainArgs, settings, app, nullptr)) {
+                    logger::error("CefInitialize failed, exit code: {}", CefGetExitCode());
+                    initPromise.set_value(false);
+                    return;
+                }
+                initPromise.set_value(true);
+                CefRunMessageLoop();
+                logger::info("Calling CefShutdown.");
+                CefShutdown();
+                logger::info("CefShutdown completed.");
+            });
+
+        if (!initResult.get()) {
+            _impl->cefThread.join();
             _impl->app = nullptr;
             return false;
         }
@@ -1042,9 +1069,13 @@ namespace PrismaUI::Cef {
         _impl->devToolsTargetBrowserId.store(-1, std::memory_order_release);
         _impl->devToolsBrowserId.store(-1, std::memory_order_release);
 
-        logger::info("Calling CefShutdown.");
-        CefShutdown();
-        logger::info("CefShutdown completed.");
+        logger::info("Stopping CEF UI message loop.");
+        if (CefPostTask(TID_UI, new FunctionTask([] { CefQuitMessageLoop(); }))) {
+            _impl->cefThread.join();
+        } else {
+            logger::warn("Failed to post CefQuitMessageLoop; detaching CEF UI thread without CefShutdown.");
+            _impl->cefThread.detach();
+        }
 
         {
             std::lock_guard lock(_impl->stateMutex);

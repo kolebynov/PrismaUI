@@ -27,6 +27,13 @@ namespace PrismaUI::Cef {
         command_line->AppendSwitchWithValue("use-gl", "angle");
         command_line->AppendSwitchWithValue("use-angle", "d3d11");
 
+        // Run the GPU thread (and ANGLE's D3D11 device) inside SkyrimSE.exe so WDDM schedules it
+        // with the game's foreground priority instead of as a background helper process. A
+        // GPU-thread crash now takes down the game, and the GPU cannot be restarted. Requires the
+        // CEF UI loop to run on the thread that called CefInitialize (see CefRuntime::Initialize):
+        // with multi_threaded_message_loop CEF 147 fails a thread_checker DCHECK at startup.
+        command_line->AppendSwitch("in-process-gpu");
+
         // Chromium otherwise lowers the renderer's process priority (and on Windows 11 applies
         // EcoQoS) whenever it considers the renderer backgrounded.
         command_line->AppendSwitch("disable-renderer-backgrounding");
@@ -35,7 +42,7 @@ namespace PrismaUI::Cef {
         // hybrid-GPU machines Chromium otherwise composites OSR output on a different
         // adapter, so OnAcceleratedPaint's shared NT texture cannot be opened on our
         // render device (OpenSharedResource1 fails with E_INVALIDARG) and nothing draws.
-        // Value is "<HighPart>,<LowPart>" decimal; Chromium copies it to the GPU process.
+        // Value is "<HighPart>,<LowPart>" decimal; ANGLE reads it on the in-process GPU thread.
         if (!adapterLuidValue_.empty()) {
             command_line->AppendSwitchWithValue("use-adapter-luid", adapterLuidValue_);
         }
