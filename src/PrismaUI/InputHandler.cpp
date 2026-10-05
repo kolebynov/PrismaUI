@@ -6,6 +6,7 @@
 #include "Cef/Shared/ProcessMessageNames.h"
 #include "Communication.h"
 #include "Core.h"
+#include "Globals.h"
 #include "ImeHelper.h"
 #include "Utils/Encoding.h"
 #include "Utils/PointerLinkedList.h"
@@ -643,7 +644,7 @@ namespace PrismaUI {
             logger::info("WndProc hook installed successfully from render thread.");
         } else {
             logger::warn("Direct installation failed, scheduling on main thread...");
-            SKSE::GetTaskInterface()->AddTask([this] {
+            MainThreadScheduler.Post([this] {
                 logger::info("Attempting to install WndProc hook from main thread...");
                 if (InstallWndProcHookAttempt()) {
                     logger::info("WndProc hook installed successfully from main thread.");

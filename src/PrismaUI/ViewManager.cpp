@@ -2,6 +2,7 @@
 
 #include "Cef/Browser/CefRuntime.h"
 #include "Core.h"
+#include "Globals.h"
 #include "InputHandler.h"
 #include "Menus/PrismaUIMenu.h"
 
@@ -23,7 +24,7 @@ namespace PrismaUI::ViewManager {
         // releasing the mouse inside a focused view. Drive the same transition on the main thread; the
         // sink only reads the mode, but pass the real menu name anyway.
         void NotifyPlayerControlsMenuMode(RE::MenuModeChangeEvent::Mode mode) {
-            SKSE::GetTaskInterface()->AddTask([mode] {
+            MainThreadScheduler.Post([mode] {
                 auto* controls = RE::PlayerControls::GetSingleton();
                 if (!controls) {
                     return;

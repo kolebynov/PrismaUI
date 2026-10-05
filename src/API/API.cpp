@@ -1,6 +1,7 @@
 #include "API.h"
 
 #include "Cef/Browser/CefRuntime.h"
+#include "Globals.h"
 #include "PrismaUI/Communication.h"
 #include "PrismaUI/ViewManager.h"
 #include "Utils/Encoding.h"
@@ -143,7 +144,7 @@ void PluginAPI::PrismaUIInterface::RegisterConsoleCallback(PrismaView view,
     if (callback) {
         auto wrappedCallback = [callback](PrismaUI::Core::PrismaViewId id, PRISMA_UI_API::ConsoleMessageLevel level,
                                           const std::string& msg) {
-            SKSE::GetTaskInterface()->AddTask([callback, id, level, msg]() { callback(id, level, msg.c_str()); });
+            MainThreadScheduler.Post([callback, id, level, msg]() { callback(id, level, msg.c_str()); });
         };
         PrismaUI::ViewManager::RegisterConsoleCallback(view, wrappedCallback);
     } else {
@@ -191,7 +192,7 @@ void PluginAPI::PrismaUIInterface::RegisterConsoleCallbackV2(PrismaView view,
 
     auto wrappedCallback = [callback, callbackState](PrismaUI::Core::PrismaViewId id,
                                                      PRISMA_UI_API::ConsoleMessageLevel level, const std::string& msg) {
-        SKSE::GetTaskInterface()->AddTask(
+        MainThreadScheduler.Post(
             [callback, id, level, msg, callbackState] { callback(id, level, msg.c_str(), callbackState); });
     };
     PrismaUI::ViewManager::RegisterConsoleCallback(view, wrappedCallback);
@@ -216,8 +217,7 @@ PrismaView PluginAPI::PrismaUIInterface::CreateViewInternal(
     std::function<void(PrismaUI::Core::PrismaViewId)> domReadyWrapper = nullptr;
     if (onDomReadyCallback) {
         domReadyWrapper = [callback = std::move(onDomReadyCallback)](PrismaUI::Core::PrismaViewId viewId) {
-            SKSE::GetTaskInterface()->AddTask(
-                [callback = std::move(callback), id = viewId] { std::invoke(callback, id); });
+            MainThreadScheduler.Post([callback = std::move(callback), id = viewId] { std::invoke(callback, id); });
         };
     }
 
@@ -245,7 +245,7 @@ void PluginAPI::PrismaUIInterface::InvokeInternal(PrismaView view, const char* s
 
     if (callback) {
         callbackWrapper = [callback = std::move(callback)](const std::string& result) {
-            SKSE::GetTaskInterface()->AddTask(
+            MainThreadScheduler.Post(
                 [targetCallback = std::move(callback), data = result] { targetCallback(data.c_str()); });
         };
     }
@@ -260,8 +260,7 @@ void PluginAPI::PrismaUIInterface::RegisterJSListenerInternal(PrismaView view, c
     }
 
     PrismaUI::Core::SimpleJSCallback callbackWrapper = [callback = std::move(callback)](const std::string& arg) {
-        SKSE::GetTaskInterface()->AddTask(
-            [targetCallback = std::move(callback), data = arg] { targetCallback(data.c_str()); });
+        MainThreadScheduler.Post([targetCallback = std::move(callback), data = arg] { targetCallback(data.c_str()); });
     };
 
     return PrismaUI::Communication::RegisterJSListener(view, functionName, callbackWrapper);

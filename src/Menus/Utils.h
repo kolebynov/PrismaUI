@@ -1,8 +1,8 @@
 #pragma once
 
+#include "Globals.h"
 #include "RE/U/UI.h"
 #include "RE/U/UIMessageQueue.h"
-#include "SKSE/API.h"
 
 namespace PrismaUI::Menus {
     template <typename T>
@@ -28,7 +28,7 @@ namespace PrismaUI::Menus {
 
     // Callable from any thread; the message is enqueued from the main UI thread.
     inline void PostMenuMessage(std::string_view menuName, RE::UI_MESSAGE_TYPE messageType) {
-        SKSE::GetTaskInterface()->AddUITask(
+        MainThreadScheduler.Post(
             [name = RE::BSFixedString(menuName), messageType] { SendMenuMessage(name, messageType); });
     }
 
