@@ -9,7 +9,6 @@
 #include "Menus/Utils.h"
 #include "Utils/D3DStateGuard.h"
 #include "Utils/DllLoader.h"
-#include "ViewOperationQueue.h"
 
 namespace PrismaUI {
     Renderer& Renderer::GetSingleton() {
@@ -59,8 +58,6 @@ namespace PrismaUI {
                 _cefRuntime->Resize(_screenSize.width, _screenSize.height);
             }
         }
-
-        ViewOperationQueue::ProcessAllViewOperations();
 
         _cefRuntime->UpdateOverlayTexture();
         _cefRuntime->BeginFrame();

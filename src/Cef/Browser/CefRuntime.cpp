@@ -318,7 +318,7 @@ namespace PrismaUI::Cef {
 
     bool CefRuntime::Initialize(HWND hwnd, uint32_t width, uint32_t height, ID3D11Device* renderDevice,
                                 ID3D11DeviceContext* context) const {
-        std::lock_guard lock(_impl->stateMutex);
+        std::unique_lock lock(_impl->stateMutex);
 
         if (_impl->initialized.load(std::memory_order_acquire)) {
             return true;
@@ -437,6 +437,12 @@ namespace PrismaUI::Cef {
                 _impl->initState.SetFailed();
             }
         });
+
+        // The CEF UI thread replays pending shell views from NotifyShellLoadEnd before signalling
+        // initialization, and that replay takes stateMutex (RunShellScript). Holding it across the wait
+        // deadlocks whenever a view was created before CEF finished starting. initializeAttempted already
+        // rejects re-entry, so the lock is not needed past this point.
+        lock.unlock();
 
         auto isSuccess = _impl->initState.WaitForInitialize();
         if (isSuccess) {

@@ -4,7 +4,6 @@
 #include "Core.h"
 #include "InputHandler.h"
 #include "Menus/PrismaUIMenu.h"
-#include "ViewOperationQueue.h"
 
 namespace PrismaUI::ViewManager {
     using namespace Core;
@@ -40,9 +39,8 @@ namespace PrismaUI::ViewManager {
         // Apply the native side-effects of focusing a Prisma view (control-map disable,
         // FocusMenu open, optional pause, input capture). Caller already holds the target
         // viewData and has cleared focus on any other focused views.
-        void ApplyFocusSideEffects(Core::PrismaViewId viewId, const std::shared_ptr<PrismaView>& viewData,
-                                   bool pauseGame) {
-            PrismaUI::InputHandler::GetSingleton().EnableInputCapture(viewId);
+        void ApplyFocusSideEffects(PrismaViewId viewId, const std::shared_ptr<PrismaView>& viewData, bool pauseGame) {
+            InputHandler::GetSingleton().EnableInputCapture(viewId);
 
             Menus::PrismaUIMenu::Focus();
             NotifyPlayerControlsMenuMode(RE::MenuModeChangeEvent::Mode::kDisplayed);
@@ -69,7 +67,7 @@ namespace PrismaUI::ViewManager {
         // Apply the native side-effects of unfocusing: blur the iframe via CEF, restore
         // controls, optionally close FocusMenu, drop the pause counter. closeFocusMenu==false
         // is used when transferring focus between Prisma views so the focus surface stays open.
-        void ApplyUnfocusSideEffects(Core::PrismaViewId viewId, const std::shared_ptr<PrismaView>& viewData) {
+        void ApplyUnfocusSideEffects(PrismaViewId viewId, const std::shared_ptr<PrismaView>& viewData) {
             if (viewData->isPaused.load()) {
                 if (auto* ui = RE::UI::GetSingleton()) {
                     if (ui->numPausesGame > 0) {
@@ -80,8 +78,8 @@ namespace PrismaUI::ViewManager {
                 logger::info("Unfocus: View [{}] released the pause counter.", viewId);
             }
 
-            PrismaUI::InputHandler::GetSingleton().DisableInputCapture(viewId);
-            PrismaUI::InputHandler::GetSingleton().ClearImeState(viewId);
+            InputHandler::GetSingleton().DisableInputCapture(viewId);
+            InputHandler::GetSingleton().ClearImeState(viewId);
 
             Cef::CefRuntime::GetSingleton().BlurShellView(viewId);
             viewData->isFocused.store(false);
@@ -99,17 +97,10 @@ namespace PrismaUI::ViewManager {
                 controlMap->ToggleControls(RE::UserEvents::USER_EVENT_FLAG::kVATS, true, false);
             }
         }
-
-        std::shared_ptr<PrismaView> LookupView(Core::PrismaViewId viewId) {
-            std::shared_lock lock(viewsMutex);
-            auto it = views.find(viewId);
-            if (it == views.end()) return nullptr;
-            return it->second;
-        }
     }  // namespace
 
-    Core::PrismaViewId Create(const std::string& htmlPath, std::function<void(Core::PrismaViewId)> onDomReadyCallback) {
-        const Core::PrismaViewId newViewId = nextViewId.fetch_add(1, std::memory_order_relaxed);
+    PrismaViewId Create(const std::string& htmlPath, std::function<void(PrismaViewId)> onDomReadyCallback) {
+        const PrismaViewId newViewId = nextViewId.fetch_add(1, std::memory_order_relaxed);
 
         // Mirror CefRuntime's URL resolution shape for logging consistency; the runtime
         // re-resolves the same way when CreateShellView is dispatched.
@@ -120,7 +111,7 @@ namespace PrismaUI::ViewManager {
             resolvedUrl = "file:///views/" + htmlPath;
         }
 
-        auto viewData = std::make_shared<Core::PrismaView>();
+        auto viewData = std::make_shared<PrismaView>();
         viewData->id = newViewId;
         viewData->iframeName = std::to_string(newViewId);
         viewData->resolvedUrl = resolvedUrl;
@@ -129,15 +120,15 @@ namespace PrismaUI::ViewManager {
         viewData->domReadyCallback = std::move(onDomReadyCallback);
 
         {
-            std::unique_lock lock(viewsMutex);
+            auto viewsLock = views.Acquire();
             int maxOrder = -1;
-            for (const auto& pair : views) {
-                if (pair.second && pair.second->order > maxOrder) {
-                    maxOrder = pair.second->order;
+            for (const auto& val : *viewsLock | std::views::values) {
+                if (val && val->order > maxOrder) {
+                    maxOrder = val->order;
                 }
             }
             viewData->order = maxOrder + 1;
-            views[newViewId] = viewData;
+            (*viewsLock)[newViewId] = viewData;
         }
 
         logger::info("View [{}] create requested: iframe={}, url={}, order={}", newViewId, viewData->iframeName,
@@ -147,244 +138,214 @@ namespace PrismaUI::ViewManager {
         // once the shell page is ready, so we deliberately do not block on shell readiness.
         const std::string htmlPathCopy = htmlPath;
         const int order = viewData->order;
-        ViewOperationQueue::EnqueueOperation(newViewId, [newViewId, htmlPathCopy, order]() {
-            auto view = LookupView(newViewId);
-            if (!view) return;
-            bool expected = false;
-            if (!view->iframeCreateRequested.compare_exchange_strong(expected, true)) {
-                logger::debug("Create: View [{}] iframe already requested; skipping duplicate.", newViewId);
-                return;
-            }
+        bool expected = false;
+        if (!viewData->iframeCreateRequested.compare_exchange_strong(expected, true)) {
+            logger::debug("Create: View [{}] iframe already requested; skipping duplicate.", newViewId);
+            return newViewId;
+        }
 
-            const bool ok =
-                Cef::CefRuntime::GetSingleton().CreateShellView(newViewId, htmlPathCopy, order, /*hidden=*/false);
-            if (!ok) {
-                logger::warn(
-                    "Create: CefRuntime::CreateShellView returned false for View [{}] (iframe={}); shell replay "
-                    "should attach it once the CEF browser is ready.",
-                    newViewId, view->iframeName);
-            } else {
-                logger::info("Create: View [{}] iframe={} dispatched to CEF shell.", newViewId, view->iframeName);
-            }
-            if (view->isFocused.load()) {
-                Cef::CefRuntime::GetSingleton().FocusShellView(newViewId);
-            }
-        });
+        const bool ok =
+            Cef::CefRuntime::GetSingleton().CreateShellView(newViewId, htmlPathCopy, order, /*hidden=*/false);
+        if (!ok) {
+            logger::warn(
+                "Create: CefRuntime::CreateShellView returned false for View [{}] (iframe={}); shell replay "
+                "should attach it once the CEF browser is ready.",
+                newViewId, viewData->iframeName);
+        } else {
+            logger::info("Create: View [{}] iframe={} dispatched to CEF shell.", newViewId, viewData->iframeName);
+        }
+        if (viewData->isFocused.load()) {
+            Cef::CefRuntime::GetSingleton().FocusShellView(newViewId);
+        }
 
         return newViewId;
     }
 
-    void Show(Core::PrismaViewId viewId) {
-        if (!IsValid(viewId)) {
+    std::shared_ptr<PrismaView> LookupView(PrismaViewId viewId) {
+        auto viewsLock = views.Acquire();
+        auto it = viewsLock->find(viewId);
+        if (it == viewsLock->end()) return nullptr;
+        return it->second;
+    }
+
+    void Show(PrismaViewId viewId) {
+        auto viewData = LookupView(viewId);
+        if (!viewData) {
             logger::warn("Show: View ID [{}] not found.", viewId);
             return;
         }
 
-        ViewOperationQueue::EnqueueOperation(viewId, [viewId]() {
-            auto viewData = LookupView(viewId);
-            if (!viewData) return;
-
-            if (!viewData->isHidden.load()) {
-                logger::debug("Show: View [{}] is already visible.", viewId);
-                return;
-            }
-            viewData->isHidden.store(false);
-            Cef::CefRuntime::GetSingleton().SetShellViewHidden(viewId, false);
-            if (viewData->isFocused.load()) {
-                Cef::CefRuntime::GetSingleton().FocusShellView(viewId);
-            }
-            logger::info("Show: View [{}] (iframe={}) marked visible.", viewId, viewData->iframeName);
-        });
+        if (!viewData->isHidden.load()) {
+            logger::debug("Show: View [{}] is already visible.", viewId);
+            return;
+        }
+        viewData->isHidden.store(false);
+        Cef::CefRuntime::GetSingleton().SetShellViewHidden(viewId, false);
+        if (viewData->isFocused.load()) {
+            Cef::CefRuntime::GetSingleton().FocusShellView(viewId);
+        }
+        logger::info("Show: View [{}] (iframe={}) marked visible.", viewId, viewData->iframeName);
     }
 
-    void Hide(Core::PrismaViewId viewId) {
-        if (!IsValid(viewId)) {
+    void Hide(PrismaViewId viewId) {
+        auto viewData = LookupView(viewId);
+        if (!viewData) {
             logger::warn("Hide: View ID [{}] not found.", viewId);
             return;
         }
 
-        ViewOperationQueue::EnqueueOperation(viewId, [viewId]() {
-            auto viewData = LookupView(viewId);
-            if (!viewData) return;
+        if (viewData->isHidden.load()) {
+            logger::debug("Hide: View [{}] is already hidden.", viewId);
+            return;
+        }
 
-            if (viewData->isHidden.load()) {
-                logger::debug("Hide: View [{}] is already hidden.", viewId);
-                return;
-            }
+        if (viewData->isFocused.load()) {
+            ApplyUnfocusSideEffects(viewId, viewData);
+            logger::info("Hide: View [{}] was focused; unfocused before hiding.", viewId);
+        }
 
-            if (viewData->isFocused.load()) {
-                ApplyUnfocusSideEffects(viewId, viewData);
-                logger::info("Hide: View [{}] was focused; unfocused before hiding.", viewId);
-            }
-
-            viewData->isHidden.store(true);
-            Cef::CefRuntime::GetSingleton().SetShellViewHidden(viewId, true);
-            logger::info("Hide: View [{}] (iframe={}) marked hidden.", viewId, viewData->iframeName);
-        });
+        viewData->isHidden.store(true);
+        Cef::CefRuntime::GetSingleton().SetShellViewHidden(viewId, true);
+        logger::info("Hide: View [{}] (iframe={}) marked hidden.", viewId, viewData->iframeName);
     }
 
-    bool IsHidden(Core::PrismaViewId viewId) {
-        std::shared_lock lock(viewsMutex);
-        auto it = views.find(viewId);
-        if (it != views.end()) {
+    bool IsHidden(PrismaViewId viewId) {
+        auto viewsLock = views.Acquire();
+        auto it = viewsLock->find(viewId);
+        if (it != viewsLock->end()) {
             return it->second->isHidden.load();
         }
         logger::warn("IsHidden: View ID [{}] not found.", viewId);
         return true;
     }
 
-    bool IsValid(Core::PrismaViewId viewId) {
-        std::shared_lock lock(viewsMutex);
-        return views.find(viewId) != views.end();
+    bool IsValid(PrismaViewId viewId) {
+        auto viewsLock = views.Acquire();
+        return viewsLock->contains(viewId);
     }
 
-    bool Focus(Core::PrismaViewId viewId, bool pauseGame) {
-        if (!IsValid(viewId)) {
+    bool Focus(PrismaViewId viewId, bool pauseGame) {
+        auto viewData = LookupView(viewId);
+        if (!viewData) {
             logger::warn("Focus: View ID [{}] not found.", viewId);
             return false;
         }
 
-        ViewOperationQueue::EnqueueOperation(viewId, [viewId, pauseGame]() {
-            auto viewData = LookupView(viewId);
-            if (!viewData) {
-                logger::warn("Focus: View [{}] disappeared before focus could be applied.", viewId);
-                return;
-            }
+        if (viewData->isHidden.load()) {
+            logger::warn("Focus: View [{}] is hidden; cannot focus.", viewId);
+            return false;
+        }
 
-            if (viewData->isHidden.load()) {
-                logger::warn("Focus: View [{}] is hidden; cannot focus.", viewId);
-                return;
-            }
+        if (viewData->isFocused.load()) {
+            logger::debug("Focus: View [{}] already focused.", viewId);
+            return true;
+        }
 
-            if (viewData->isFocused.load()) {
-                logger::debug("Focus: View [{}] already focused.", viewId);
-                return;
-            }
-
-            // Queue unfocus on every other currently-focused view. We pass closeFocusMenu=false
-            // so the focus surface stays open during transfer.
-            std::vector<Core::PrismaViewId> viewsToUnfocus;
-            {
-                std::shared_lock lock(viewsMutex);
-                for (const auto& pair : views) {
-                    if (pair.first != viewId && pair.second && pair.second->isFocused.load()) {
-                        viewsToUnfocus.push_back(pair.first);
-                    }
+        // Queue unfocus on every other currently-focused view. We pass closeFocusMenu=false
+        // so the focus surface stays open during transfer.
+        std::vector<PrismaViewId> viewsToUnfocus;
+        {
+            auto viewsLock = views.Acquire();
+            for (const auto& pair : *viewsLock) {
+                if (pair.first != viewId && pair.second && pair.second->isFocused.load()) {
+                    viewsToUnfocus.push_back(pair.first);
                 }
             }
+        }
 
-            for (const auto& idToUnfocus : viewsToUnfocus) {
-                ViewOperationQueue::EnqueueOperation(idToUnfocus, [idToUnfocus]() {
-                    auto vd = LookupView(idToUnfocus);
-                    if (!vd) return;
-                    if (!vd->isFocused.load()) return;
-                    ApplyUnfocusSideEffects(idToUnfocus, vd);
-                    logger::info("Focus: View [{}] unfocused (focus switching).", idToUnfocus);
-                });
-            }
+        for (const auto& idToUnfocus : viewsToUnfocus) {
+            auto vd = LookupView(idToUnfocus);
+            if (!vd) continue;
+            if (!vd->isFocused.load()) continue;
+            ApplyUnfocusSideEffects(idToUnfocus, vd);
+            logger::info("Focus: View [{}] unfocused (focus switching).", idToUnfocus);
+        }
 
-            viewData->isFocused.store(true);
-            Cef::CefRuntime::GetSingleton().FocusShellView(viewId);
-            ApplyFocusSideEffects(viewId, viewData, pauseGame);
+        viewData->isFocused.store(true);
+        Cef::CefRuntime::GetSingleton().FocusShellView(viewId);
+        ApplyFocusSideEffects(viewId, viewData, pauseGame);
 
-            logger::info("Focus: View [{}] (iframe={}) focused: pauseGame={}", viewId, viewData->iframeName, pauseGame);
-        });
+        logger::info("Focus: View [{}] (iframe={}) focused: pauseGame={}", viewId, viewData->iframeName, pauseGame);
 
         return true;
     }
 
-    void Unfocus(Core::PrismaViewId viewId) {
-        if (!IsValid(viewId)) {
+    void Unfocus(PrismaViewId viewId) {
+        auto viewData = LookupView(viewId);
+        if (!viewData) {
             logger::warn("Unfocus: View ID [{}] not found.", viewId);
+            InputHandler::GetSingleton().DisableInputCapture(0);
+            Menus::PrismaUIMenu::Unfocus();
             return;
         }
 
-        ViewOperationQueue::EnqueueOperation(viewId, [viewId]() {
-            auto viewData = LookupView(viewId);
-            if (!viewData) {
-                logger::warn("Unfocus: View [{}] disappeared before unfocus could be applied.", viewId);
-                PrismaUI::InputHandler::GetSingleton().DisableInputCapture(0);
-                Menus::PrismaUIMenu::Unfocus();
-                return;
-            }
+        if (!viewData->isFocused.load()) {
+            logger::debug("Unfocus: View [{}] was not focused.", viewId);
+            return;
+        }
 
-            if (!viewData->isFocused.load()) {
-                logger::debug("Unfocus: View [{}] was not focused.", viewId);
-                return;
-            }
-
-            ApplyUnfocusSideEffects(viewId, viewData);
-            logger::info("Unfocus: View [{}] (iframe={}) unfocused.", viewId, viewData->iframeName);
-        });
+        ApplyUnfocusSideEffects(viewId, viewData);
+        logger::info("Unfocus: View [{}] (iframe={}) unfocused.", viewId, viewData->iframeName);
     }
 
-    bool HasFocus(Core::PrismaViewId viewId) {
-        std::shared_lock lock(viewsMutex);
-        auto it = views.find(viewId);
-        if (it == views.end()) {
+    bool HasFocus(PrismaViewId viewId) {
+        auto viewsLock = views.Acquire();
+        auto it = viewsLock->find(viewId);
+        if (it == viewsLock->end()) {
             logger::warn("HasFocus: View ID [{}] not found.", viewId);
             return false;
         }
+
         return it->second->isFocused.load();
     }
 
-    bool ViewHasInputFocus(Core::PrismaViewId viewId) {
-        // Step 6 simplification: native focus state is the source of truth.
-        // Step 7 may refine using DOM activeElement signalling from CEF.
-        std::shared_lock lock(viewsMutex);
-        auto it = views.find(viewId);
-        if (it == views.end()) return false;
+    bool ViewHasInputFocus(PrismaViewId viewId) {
+        auto viewsLock = views.Acquire();
+        auto it = viewsLock->find(viewId);
+        if (it == viewsLock->end()) return false;
         return it->second->isFocused.load();
     }
 
-    void SetScrollingPixelSize(Core::PrismaViewId viewId, int pixelSize) {
-        std::unique_lock lock(viewsMutex);
-        auto it = views.find(viewId);
-        if (it == views.end()) {
+    void SetScrollingPixelSize(PrismaViewId viewId, int pixelSize) {
+        auto viewData = LookupView(viewId);
+        if (!viewData) {
             logger::warn("SetScrollingPixelSize: View ID [{}] not found.", viewId);
             return;
         }
         if (pixelSize <= 0) {
             logger::warn("SetScrollingPixelSize: Invalid pixel size {} for view [{}]. Must be > 0. Using default.",
                          pixelSize, viewId);
-            it->second->scrollingPixelSize = 16;
+            viewData->scrollingPixelSize = 16;
         } else {
-            it->second->scrollingPixelSize = pixelSize;
+            viewData->scrollingPixelSize = pixelSize;
             logger::debug("SetScrollingPixelSize: Set {} pixels per scroll line for view [{}]", pixelSize, viewId);
         }
     }
 
-    int GetScrollingPixelSize(Core::PrismaViewId viewId) {
-        std::shared_lock lock(viewsMutex);
-        auto it = views.find(viewId);
-        if (it != views.end()) {
-            return it->second->scrollingPixelSize;
+    int GetScrollingPixelSize(PrismaViewId viewId) {
+        auto viewData = LookupView(viewId);
+        if (viewData) {
+            return viewData->scrollingPixelSize;
         }
+
         logger::warn("GetScrollingPixelSize: View ID [{}] not found, returning default.", viewId);
         return 28;
     }
 
-    void Destroy(Core::PrismaViewId viewId) {
+    void Destroy(PrismaViewId viewId) {
         logger::info("Destroy: Beginning destruction of View [{}]", viewId);
-
-        if (!IsValid(viewId)) {
-            logger::warn("Destroy: View ID [{}] not found.", viewId);
-            return;
-        }
-
-        // Drop any pending operations so they cannot race against destruction.
-        ViewOperationQueue::ClearOperations(viewId);
 
         std::shared_ptr<PrismaView> viewDataToDestroy;
         {
-            std::unique_lock lock(viewsMutex);
-            auto it = views.find(viewId);
-            if (it == views.end()) {
-                logger::warn("Destroy: View ID [{}] not found after revalidation.", viewId);
+            auto viewsLock = views.Acquire();
+            auto it = viewsLock->find(viewId);
+            if (it == viewsLock->end()) {
+                logger::warn("Destroy: View ID [{}] not found.", viewId);
                 return;
             }
+
             viewDataToDestroy = std::move(it->second);
-            views.erase(it);
+            viewsLock->erase(it);
         }
 
         viewDataToDestroy->destroyRequested.store(true, std::memory_order_release);
@@ -400,16 +361,17 @@ namespace PrismaUI::ViewManager {
 
         // Remove any JS callbacks registered for this view.
         {
-            std::lock_guard<std::mutex> lock(jsCallbacksMutex);
+            auto jsCallbacksLock = jsCallbacks.Acquire();
             std::size_t removed = 0;
-            for (auto it = jsCallbacks.begin(); it != jsCallbacks.end();) {
+            for (auto it = jsCallbacksLock->begin(); it != jsCallbacksLock->end();) {
                 if (it->first.first == viewId) {
-                    it = jsCallbacks.erase(it);
+                    it = jsCallbacksLock->erase(it);
                     ++removed;
                 } else {
                     ++it;
                 }
             }
+
             if (removed > 0) {
                 logger::debug("Destroy: Removed {} JavaScript callback(s) for View [{}]", removed, viewId);
             }
@@ -424,53 +386,50 @@ namespace PrismaUI::ViewManager {
         logger::info("Destroy: View [{}] (iframe={}) destroyed.", viewId, viewDataToDestroy->iframeName);
     }
 
-    void SetOrder(Core::PrismaViewId viewId, int order) {
-        std::shared_ptr<PrismaView> viewData;
-        {
-            std::unique_lock lock(viewsMutex);
-            auto it = views.find(viewId);
-            if (it == views.end()) {
-                logger::warn("SetOrder: View ID [{}] not found.", viewId);
-                return;
-            }
-            it->second->order = order;
-            viewData = it->second;
+    void SetOrder(PrismaViewId viewId, int order) {
+        auto viewData = LookupView(viewId);
+        if (!viewData) {
+            logger::warn("SetOrder: View ID [{}] not found.", viewId);
+            return;
         }
+
+        viewData->order = order;
 
         Cef::CefRuntime::GetSingleton().SetShellViewOrder(viewId, order);
         if (viewData->isFocused.load()) {
             Cef::CefRuntime::GetSingleton().FocusShellView(viewId);
         }
+
         logger::info("SetOrder: View [{}] (iframe={}) order set to {}.", viewId, viewData->iframeName, order);
     }
 
-    int GetOrder(Core::PrismaViewId viewId) {
-        std::shared_lock lock(viewsMutex);
-        auto it = views.find(viewId);
-        if (it != views.end()) {
-            return it->second->order;
+    int GetOrder(PrismaViewId viewId) {
+        auto viewData = LookupView(viewId);
+        if (viewData) {
+            return viewData->order;
         }
+
         logger::warn("GetOrder: View ID [{}] not found, returning -1.", viewId);
         return -1;
     }
 
     bool HasAnyActiveFocus() {
-        std::shared_lock lock(viewsMutex);
-        for (const auto& pair : views) {
-            if (pair.second && pair.second->isFocused.load()) {
+        auto viewsLock = views.Acquire();
+        for (const auto& val : *viewsLock | std::views::values) {
+            if (val && val->isFocused.load()) {
                 return true;
             }
         }
+
         return false;
     }
 
     void RegisterConsoleCallback(
-        Core::PrismaViewId viewId,
+        PrismaViewId viewId,
         std::function<void(PrismaViewId, PRISMA_UI_API::ConsoleMessageLevel, const std::string&)> callback) {
-        std::unique_lock lock(viewsMutex);
-        auto it = views.find(viewId);
-        if (it != views.end() && it->second) {
-            it->second->consoleMessageCallback = std::move(callback);
+        auto viewData = LookupView(viewId);
+        if (viewData) {
+            viewData->consoleMessageCallback = std::move(callback);
         } else {
             logger::warn("RegisterConsoleCallback: View ID [{}] not found.", viewId);
         }
@@ -481,8 +440,8 @@ namespace PrismaUI::ViewManager {
 
         std::vector<PrismaViewId> viewIdsToDestroy;
         {
-            std::shared_lock lock(viewsMutex);
-            for (const auto& pair : views) {
+            auto viewsLock = views.Acquire();
+            for (const auto& pair : *viewsLock) {
                 viewIdsToDestroy.push_back(pair.first);
                 if (pair.second) {
                     // Mark each view as destroyRequested so any in-flight queue entries
@@ -500,10 +459,7 @@ namespace PrismaUI::ViewManager {
             }
         }
 
-        {
-            std::unique_lock lock(viewsMutex);
-            views.clear();
-        }
+        views.Acquire()->clear();
 
         logger::info("Shutdown complete");
     }

@@ -9,12 +9,14 @@ namespace PRISMA_UI_API {
 }
 
 namespace PrismaUI::Core {
+    struct PrismaView;
     typedef uint64_t PrismaViewId;
 }
 
 namespace PrismaUI::ViewManager {
     Core::PrismaViewId Create(const std::string& htmlPath,
                               std::function<void(Core::PrismaViewId)> onDomReadyCallback = nullptr);
+    std::shared_ptr<Core::PrismaView> LookupView(Core::PrismaViewId viewId);
     void Show(Core::PrismaViewId viewId);
     void Hide(Core::PrismaViewId viewId);
     bool IsHidden(Core::PrismaViewId viewId);

@@ -19,11 +19,6 @@ namespace PrismaUI {
     // Context references for focus/IME state checks
     struct ImeHelperContext {
         HWND hwnd = nullptr;
-        std::map<Core::PrismaViewId, std::shared_ptr<Core::PrismaView>>* viewsMap = nullptr;
-        std::shared_mutex* viewsMapMutex = nullptr;
-        std::mutex* focusedViewIdMutex = nullptr;
-        Core::PrismaViewId* currentlyFocusedViewId = nullptr;
-        std::atomic<bool>* isAnyInputCaptureActive = nullptr;
         std::atomic<bool>* isTextInputFocused = nullptr;
     };
 

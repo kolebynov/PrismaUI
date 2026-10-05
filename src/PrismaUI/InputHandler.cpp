@@ -560,10 +560,10 @@ namespace PrismaUI {
                                 focusedViewId = _currentlyFocusedViewId;
                             }
 
-                            if (focusedViewId != 0 && _viewsMap && _viewsMapMutex) {
-                                std::shared_lock lock(*_viewsMapMutex);
-                                auto it = _viewsMap->find(focusedViewId);
-                                if (it != _viewsMap->end() && it->second) {
+                            if (focusedViewId != 0 && _viewsMap) {
+                                auto viewsMapLock = _viewsMap->Acquire();
+                                auto it = viewsMapLock->find(focusedViewId);
+                                if (it != viewsMapLock->end() && it->second) {
                                     scrollPixelSize = it->second->scrollingPixelSize;
                                 }
                             }
@@ -589,9 +589,8 @@ namespace PrismaUI {
         return RE::BSEventNotifyControl::kContinue;
     }
 
-    bool InputHandler::Initialize(HWND gameHwnd,
-                                  std::map<Core::PrismaViewId, std::shared_ptr<Core::PrismaView>>* viewsMap,
-                                  std::shared_mutex* viewsMapMutex) {
+    bool InputHandler::Initialize(
+        HWND gameHwnd, ResourceLock<std::map<Core::PrismaViewId, std::shared_ptr<Core::PrismaView>>>* viewsMap) {
         logger::info("Initialization...");
 
         if (auto inputEventSource = RE::BSInputDeviceManager::GetSingleton()) {
@@ -605,7 +604,6 @@ namespace PrismaUI {
 
         _hWnd = gameHwnd;
         _viewsMap = viewsMap;
-        _viewsMapMutex = viewsMapMutex;
         _isAnyInputCaptureActive = false;
         _isFocusedTextInputActive = false;
         {
@@ -618,8 +616,7 @@ namespace PrismaUI {
         _imeHelper.SetCallbacks([](const std::string& s) { return EscapeForJS(s); },
                                 [this](const std::wstring& ws, LPARAM lp) { QueueCommittedCharEvent(ws, lp); },
                                 [](const wchar_t* p, int len) { return ConvertUtf16ToUtf8(p, len); });
-        _imeHelper.SetContext({_hWnd, _viewsMap, _viewsMapMutex, &_focusedViewIdMutex, &_currentlyFocusedViewId,
-                               &_isAnyInputCaptureActive, &_isFocusedTextInputActive});
+        _imeHelper.SetContext({.hwnd = _hWnd, .isTextInputFocused = &_isFocusedTextInputActive});
         _imeHelper.Initialize(_hWnd);
 
         InstallWndProcHook();
@@ -811,10 +808,10 @@ namespace PrismaUI {
         }
 
         std::shared_ptr<Core::PrismaView> targetViewData = nullptr;
-        if (_viewsMap && _viewsMapMutex) {
-            std::shared_lock lock(*_viewsMapMutex);
-            auto it = _viewsMap->find(focusedViewIdCopy);
-            if (it != _viewsMap->end()) {
+        if (_viewsMap) {
+            auto viewsMapLock = _viewsMap->Acquire();
+            auto it = viewsMapLock->find(focusedViewIdCopy);
+            if (it != viewsMapLock->end()) {
                 targetViewData = it->second;
             }
         }
@@ -865,7 +862,6 @@ namespace PrismaUI {
 
         _hWnd = nullptr;
         _viewsMap = nullptr;
-        _viewsMapMutex = nullptr;
         _isFocusedTextInputActive = false;
         _isInitialized = false;
         logger::info("Shutdown complete");

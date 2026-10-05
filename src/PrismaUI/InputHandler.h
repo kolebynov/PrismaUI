@@ -19,8 +19,8 @@ namespace PrismaUI {
     public:
         static InputHandler& GetSingleton();
 
-        bool Initialize(HWND gameHwnd, std::map<Core::PrismaViewId, std::shared_ptr<Core::PrismaView>>* viewsMap,
-                        std::shared_mutex* viewsMapMutex);
+        bool Initialize(HWND gameHwnd,
+                        ResourceLock<std::map<Core::PrismaViewId, std::shared_ptr<Core::PrismaView>>>* viewsMap);
 
         void EnableInputCapture(Core::PrismaViewId viewId);
         void DisableInputCapture(Core::PrismaViewId viewId);
@@ -49,8 +49,7 @@ namespace PrismaUI {
         void QueueCommittedCharEvent(const std::wstring& utf16Text, LPARAM lParam);
 
         HWND _hWnd{};
-        std::map<Core::PrismaViewId, std::shared_ptr<Core::PrismaView>>* _viewsMap{};
-        std::shared_mutex* _viewsMapMutex{};
+        ResourceLock<std::map<Core::PrismaViewId, std::shared_ptr<Core::PrismaView>>>* _viewsMap{};
         ImeHelper _imeHelper;
         Core::PrismaViewId _currentlyFocusedViewId{};
         std::mutex _focusedViewIdMutex;

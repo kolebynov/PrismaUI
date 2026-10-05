@@ -62,7 +62,7 @@ namespace PrismaUI::Bootstrapper {
             return std::unexpected("CefRuntime initialization failed");
         }
 
-        if (!InputHandler::GetSingleton().Initialize(renderData.Hwnd, &Core::views, &Core::viewsMutex)) {
+        if (!InputHandler::GetSingleton().Initialize(renderData.Hwnd, &Core::views)) {
             logger::critical("InputHandler initialization failed");
             return std::unexpected("InputHandler initialization failed");
         }

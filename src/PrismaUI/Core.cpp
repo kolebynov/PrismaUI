@@ -11,9 +11,7 @@ namespace PrismaUI::Core {
 
     std::atomic_uint64_t nextViewId = {1};
 
-    std::map<PrismaViewId, std::shared_ptr<PrismaView>> views;
-    std::shared_mutex viewsMutex;
+    ResourceLock<std::map<PrismaViewId, std::shared_ptr<PrismaView>>> views;
 
-    std::map<std::pair<PrismaViewId, std::string>, JSCallbackData> PrismaUI::Core::jsCallbacks;
-    std::mutex PrismaUI::Core::jsCallbacksMutex;
+    ResourceLock<std::map<std::pair<PrismaViewId, std::string>, JSCallbackData>> PrismaUI::Core::jsCallbacks;
 }  // namespace PrismaUI::Core

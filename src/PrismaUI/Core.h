@@ -7,8 +7,9 @@
 #include <memory>
 #include <mutex>
 #include <queue>
-#include <shared_mutex>
 #include <string>
+
+#include "Utils/ResourceLock.h"
 
 namespace PRISMA_UI_API {
     enum class ConsoleMessageLevel : uint8_t;
@@ -46,8 +47,7 @@ namespace PrismaUI::Core {
 
     extern std::atomic_uint64_t nextViewId;
 
-    extern std::map<PrismaViewId, std::shared_ptr<PrismaView>> views;
-    extern std::shared_mutex viewsMutex;
+    extern ResourceLock<std::map<PrismaViewId, std::shared_ptr<PrismaView>>> views;
 
     using SimpleJSCallback = std::function<void(const std::string&)>;
 
@@ -57,6 +57,5 @@ namespace PrismaUI::Core {
         SimpleJSCallback callback;
     };
 
-    extern std::map<std::pair<PrismaViewId, std::string>, JSCallbackData> jsCallbacks;
-    extern std::mutex jsCallbacksMutex;
+    extern ResourceLock<std::map<std::pair<PrismaViewId, std::string>, JSCallbackData>> jsCallbacks;
 }

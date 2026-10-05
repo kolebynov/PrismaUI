@@ -19,13 +19,10 @@ namespace PrismaUI::Communication {
     }
 
     void Invoke(Core::PrismaViewId viewId, std::string script, std::function<void(std::string)> callback) {
-        {
-            std::shared_lock lock(viewsMutex);
-            if (views.find(viewId) == views.end()) {
-                logger::warn("Invoke: View ID [{}] not found.", viewId);
-                if (callback) callback(std::string());
-                return;
-            }
+        if (!ViewManager::IsValid(viewId)) {
+            logger::warn("Invoke: View ID [{}] not found.", viewId);
+            if (callback) callback(std::string());
+            return;
         }
 
         Cef::CefRuntime::GetSingleton().InvokeScript(viewId, std::move(script), std::move(callback));
@@ -38,12 +35,12 @@ namespace PrismaUI::Communication {
         }
 
         {
-            std::lock_guard<std::mutex> lock(jsCallbacksMutex);
+            auto jsCallbacksLock = jsCallbacks.Acquire();
             JSCallbackData data;
             data.viewId = viewId;
             data.name = name;
             data.callback = std::move(callback);
-            jsCallbacks[std::make_pair(viewId, name)] = std::move(data);
+            (*jsCallbacksLock)[std::make_pair(viewId, name)] = std::move(data);
             logger::info("RegisterJSListener: stored callback '{}' for view [{}]", name, viewId);
         }
 
@@ -54,12 +51,9 @@ namespace PrismaUI::Communication {
     }
 
     void InteropCall(Core::PrismaViewId viewId, const std::string& functionName, const std::string& argument) {
-        {
-            std::shared_lock lock(viewsMutex);
-            if (views.find(viewId) == views.end()) {
-                logger::warn("InteropCall: View ID [{}] not found.", viewId);
-                return;
-            }
+        if (!ViewManager::IsValid(viewId)) {
+            logger::warn("InteropCall: View ID [{}] not found.", viewId);
+            return;
         }
 
         Cef::CefRuntime::GetSingleton().InteropCallInView(viewId, functionName, argument);
@@ -72,9 +66,9 @@ namespace PrismaUI::Communication {
     void DispatchListenerInvoke(uint64_t viewId, const std::string& name, std::string argument) {
         Core::SimpleJSCallback target;
         {
-            std::lock_guard<std::mutex> lock(jsCallbacksMutex);
-            auto it = jsCallbacks.find(std::make_pair(static_cast<Core::PrismaViewId>(viewId), name));
-            if (it != jsCallbacks.end()) {
+            auto jsCallbacksLock = jsCallbacks.Acquire();
+            auto it = jsCallbacksLock->find(std::make_pair(static_cast<Core::PrismaViewId>(viewId), name));
+            if (it != jsCallbacksLock->end()) {
                 target = it->second.callback;
             }
         }
@@ -94,12 +88,7 @@ namespace PrismaUI::Communication {
     }
 
     void DispatchConsoleMessage(uint64_t viewId, const std::string& level, std::string text) {
-        std::shared_ptr<PrismaView> viewData;
-        {
-            std::shared_lock lock(viewsMutex);
-            auto it = views.find(viewId);
-            if (it != views.end()) viewData = it->second;
-        }
+        auto viewData = ViewManager::LookupView(viewId);
         if (!viewData || !viewData->consoleMessageCallback) {
             return;
         }
@@ -115,12 +104,7 @@ namespace PrismaUI::Communication {
     }
 
     void DispatchDomReady(uint64_t viewId) {
-        std::shared_ptr<PrismaView> viewData;
-        {
-            std::shared_lock lock(viewsMutex);
-            auto it = views.find(viewId);
-            if (it != views.end()) viewData = it->second;
-        }
+        auto viewData = ViewManager::LookupView(viewId);
         if (!viewData) {
             logger::warn("DispatchDomReady: view [{}] not found.", viewId);
             return;
@@ -131,8 +115,8 @@ namespace PrismaUI::Communication {
 
         std::vector<std::string> listenerNames;
         {
-            std::lock_guard<std::mutex> lock(jsCallbacksMutex);
-            for (const auto& [key, data] : jsCallbacks) {
+            auto jsCallbacksLock = jsCallbacks.Acquire();
+            for (const auto& [key, data] : *jsCallbacksLock) {
                 if (key.first == viewId) {
                     listenerNames.push_back(data.name);
                 }
