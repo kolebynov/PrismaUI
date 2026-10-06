@@ -2,6 +2,7 @@
 
 #include <Windows.h>
 
+#include <bitset>
 #include <map>
 #include <memory>
 #include <shared_mutex>
@@ -48,6 +49,11 @@ namespace PrismaUI {
         uint32_t GetMouseModifiers() const;
         void QueueCommittedCharEvent(const std::wstring& utf16Text, LPARAM lParam);
 
+        void HandKeysToView();
+        void HandKeysToGame();
+        bool IsKeyMessageHeldFromGame(UINT uMsg, LPARAM lParam);
+        void DropKeysHeldFromView(RE::InputEvent* const* a_event);
+
         HWND _hWnd{};
         ResourceLock<std::map<Core::PrismaViewId, std::shared_ptr<Core::PrismaView>>>* _viewsMap{};
         ImeHelper _imeHelper;
@@ -57,6 +63,14 @@ namespace PrismaUI {
         std::vector<Cef::CefInputEvent> _eventQueue;
         std::atomic<bool> _isAnyInputCaptureActive = false;
         std::atomic<bool> _isFocusedTextInputActive = false;
+        // A physical key press reaches the view through WM_KEY* and the game through DirectInput; the two arrive
+        // in no fixed order, often a frame apart. A key still held when the keyboard changes hands therefore stays
+        // with its previous owner until released, or the press that focuses a view would land in it too, and the
+        // press that closes it would reach the game again. Indexed by DirectInput key code.
+        std::mutex _keyHandoffMutex;
+        std::bitset<256> _keysHeldFromGame;  // down for the game when focus started; their messages skip the view
+        std::bitset<256> _keysDownInView;    // pressed in the view and not released yet
+        std::bitset<256> _keysHeldFromView;  // still down when focus ended; their game events are dropped
         // What the game keeps seeing in RE::MenuCursor while a view is focused: the position the cursor had
         // when focus started. Vanilla menus underneath hit-test MenuCursor every frame, so freezing it is
         // what keeps them inert; an off-screen position would make MapMenu edge-scroll to the corner.
