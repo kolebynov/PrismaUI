@@ -201,8 +201,7 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory "${DIST_PRISMAUI_DIR}/libs"
     COMMAND ${CMAKE_COMMAND} -E make_directory "${DIST_SKSE_PLUGINS_DIR}"
 
-    # Copy assets folder contents to PrismaUI folder
-    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/assets/" "${DIST_PRISMAUI_DIR}"
+    # Copy the built CEF shell page to the PrismaUI folder
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${PRISMAUI_SHELL_DIST_DIR}/" "${DIST_PRISMAUI_DIR}/shell"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_SOURCE_DIR}/NOTICES.txt" "${DIST_VERSION_DIR}/NOTICES.txt"
 

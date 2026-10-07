@@ -9,7 +9,8 @@
 //   1. console.* wrapping  -> native.fireConsole(level, text)
 //   2. window.__prismaInstallListener(name) trampoline installer
 //   3. IME focus tracking  -> native.fireListener(native.imeFocusListenerName, '1'|'0')
-//   4. DOM-ready dispatch  -> native.fireDomReady()
+//   4. Ctrl+wheel page zoom suppression
+//   5. DOM-ready dispatch  -> native.fireDomReady()
 
 interface PrismaNativeBridge {
   fireListener(name: string, value: string): void;
@@ -154,6 +155,22 @@ declare global {
       true,
     );
     notifyImeFocus(document.activeElement);
+  } catch (_) {}
+
+  try {
+    // Chromium turns an unconsumed Ctrl+wheel into a browser zoom of the whole
+    // shell (every view at once). Cancelling the event in the frame stops that
+    // while the page still receives the wheel event with `ctrlKey` set, so views
+    // can implement their own Ctrl+wheel behavior.
+    window.addEventListener(
+      'wheel',
+      (event: WheelEvent): void => {
+        if (event.ctrlKey) {
+          event.preventDefault();
+        }
+      },
+      { capture: true, passive: false },
+    );
   } catch (_) {}
 
   try {

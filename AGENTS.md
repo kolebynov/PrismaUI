@@ -10,7 +10,7 @@ This repository is an SKSE plugin for Skyrim that exposes a C API for mods to re
 - Treat D3D11 texture/resource work as render-thread work. Texture creation, mapping, drawing, and release happen on the present/render path; the only drawn surface is the CEF overlay texture (plus the Prisma cursor).
 - Public API callbacks into mods must be scheduled with `MainThreadScheduler.Post` (`src/Globals.h`) — do not call mod code directly from CEF UI/renderer threads.
 - Do not directly touch `external/commonlibsse-ng` unless the task is explicitly about vendored CommonLibSSE.
-- Use the harness `search` tool for content lookup and `find` for filename lookup. The `external/` and `build/external_builds/` trees are large; scope searches to `src`, `cmake`, `assets`, `docs`, and root docs unless dependency code is relevant.
+- Use the harness `search` tool for content lookup and `find` for filename lookup. The `external/` and `build/external_builds/` trees are large; scope searches to `src`, `cmake`, `shell/app`, `docs`, and root docs unless dependency code is relevant.
 - Use existing logging style via `logger::info/warn/error/debug/critical`.
 - Follow `.clang-format`: Google base style, 4-space indents, no tabs, 120-column limit.
 - After C++ changes, run `.\Format-Code.ps1` when `clang-format` is installed. Use `.\Format-Code.ps1 -Check` to verify formatting without rewriting files.
@@ -35,11 +35,11 @@ This repository is an SKSE plugin for Skyrim that exposes a C API for mods to re
   - `PrismaUICefSubprocess` (the CEF helper executable) → `build/<preset>/bin/PrismaUICefSubprocess.exe`.
 - Distribution output: `dist/PrismaUI_<version>[_Debug]/`:
   - `PrismaUI/libs/` — `libcef.dll`, `chrome_elf.dll`, `icudtl.dat`, `v8_context_snapshot.bin`, resource `.pak`s, `locales/`, ANGLE/SwiftShader/D3D support DLLs, and `PrismaUICefSubprocess.exe`.
-  - `PrismaUI/shell/` — the CEF shell page, built from the `shell/app` TypeScript/Vite project into `shell/dist` and copied from there (NOT from `assets/`).
+  - `PrismaUI/shell/` — the CEF shell page, built from the `shell/app` TypeScript/Vite project into `shell/dist` and copied from there.
   - `SKSE/plugins/PrismaUI.dll`.
   - `NOTICES.txt` at the package root.
 - The packaging step calls `cmake -E remove_directory` on the version dir before repopulating it, so stale Ultralight/per-view inspector folders never reappear; do not reintroduce Ultralight copy rules.
-- The CEF shell page is a separate frontend build: the `PrismaUIShell` CMake target runs `npm ci` + `npm run build` (`tsc --noEmit` typecheck then `vite build`) in `shell/app`, emitting to `shell/dist`. Packaging copies `assets/` and `shell/dist/` into the distribution as two distinct steps.
+- The CEF shell page is a separate frontend build: the `PrismaUIShell` CMake target runs `npm ci` + `npm run build` (`tsc --noEmit` typecheck then `vite build`) in `shell/app`, emitting to `shell/dist`. Packaging copies `shell/dist/` into the distribution. There is no `assets/` folder anymore (the cursor texture went with the vanilla CursorMenu hooks); do not reintroduce a copy step for it.
 - `UpdateExternalDeps.ps1` prepares submodules. It can remove/reinitialize submodule folders, so do not run it casually in a dirty tree.
 
 ## Repository Map
@@ -67,9 +67,8 @@ This repository is an SKSE plugin for Skyrim that exposes a C API for mods to re
 - `src/Menus/PrismaUIMenu.*`: the single always-open, movie-less `RE::IMenu` PrismaUI registers. Its `PostDisplay` drives the overlay draw, and its static `Focus`/`Unfocus` own modal/menu-mode state plus the vanilla cursor (`kUsesCursor` + `Cursor Menu` show/hide). There is no `FocusMenu` and no vanilla `CursorMenu` hook.
 - `src/Menus/Utils.h`: menu lookup/open-state helpers and UI-message posting (`SendMenuMessage` on the UI thread, `PostMenuMessage` from any thread).
 - `src/Utils/`: `DllLoader` (CEF only), encoding helpers, NanoID, `WinKeyHandler` (Win32→`CefKeyEvent`).
-- `assets/`: static files copied into the `Data/PrismaUI` distribution (cursor texture and other CEF-facing assets). The shell page is NOT here; it is built from `shell/app` (see below).
 - `cmake/`: `commonlibsse.cmake`, `cef.cmake`, `ExternalDependencies.cmake`, `CompilerFlags.cmake`. There is no `ultralight.cmake`.
-- `shell/app/`: the CEF shell page frontend — a standalone TypeScript + Vite project (`prismaui-cef-shell`). `src/main.ts` bootstraps the page; `src/shell.ts` builds the `PrismaShellApi` command bus (`createPrismaShell`) that `CefRuntime` drives to create/show/hide/focus/order iframes named with decimal `PrismaView` ids; `src/types.ts` holds the shared TS types; `src/style.css` and `index.html` are the page shell. Built via `npm run build` into `shell/dist` (the `PrismaUIShell` target); `shell/dist` is generated output, not source. Edit the shell command bus here, not in `assets/`.
+- `shell/app/`: the CEF shell page frontend — a standalone TypeScript + Vite project (`prismaui-cef-shell`). `src/main.ts` bootstraps the page; `src/shell.ts` builds the `PrismaShellApi` command bus (`createPrismaShell`) that `CefRuntime` drives to create/show/hide/focus/order iframes named with decimal `PrismaView` ids; `src/types.ts` holds the shared TS types; `src/style.css` and `index.html` are the page shell. Built via `npm run build` into `shell/dist` (the `PrismaUIShell` target); `shell/dist` is generated output, not source. Edit the shell command bus here.
 
 ## Runtime Architecture
 
@@ -161,6 +160,7 @@ There is no C++ per-view rectangle, transform, or clipping system. Positioning i
 - Sample `_cursorX/_cursorY` (not `MenuCursor`) for the coordinates sent to CEF.
 - `Focus(view, pauseGame, disableFocusMenu)` sets native focus and posts focus to the iframe through the shell command bus, enables input capture, applies `PrismaUIMenu::Focus()` unless disabled, disables several Skyrim controls, and optionally increments `RE::UI::numPausesGame`.
 - Focusing one view queues unfocus operations for any other focused views.
+- The shell routes input to the focused view by setting `pointer-events: none` on every other iframe (`syncInputTarget` in `shell/app/src/shell.ts`). Chromium does not repaint an iframe's content when only the owner's `pointer-events` changes, so a static view above the focused one (SKSEHintsFramework) kept its old compositor hit-test data and swallowed wheel scrolling: the focused view's DOM still got `wheel`, but nothing scrolled. `refreshHitTesting` holds a no-op `filter: opacity(1)` across two rendered frames whenever a frame's `pointer-events` changes; `inert`, a permanent filter/`contain`, or a change undone within one frame do not help.
 - `Unfocus`, `Hide`, and `Destroy` clean up capture and pause state and blur the iframe in CEF.
 - `PrismaUIMenu::Focus()` sets `kModal` + `kUsesCursor` and `kMenuMode` input context, then asks the vanilla `Cursor Menu` to open, which is what makes the cursor visible; `kUsesCursor` alone draws nothing. Vanilla menus do this from `IMenu::RefreshPlatform`, but PrismaUIMenu is always open, so it posts the messages itself.
 - `PrismaUIMenu::AdvanceMovie` re-requests `Cursor Menu` while a view holds focus, because closing a vanilla cursor-using menu (the console, for example) hides it.
