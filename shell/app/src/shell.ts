@@ -28,10 +28,35 @@ function setHiddenState(frame: HTMLIFrameElement, id: string, hidden: unknown): 
   console.info(`PrismaUI shell set hidden id=${id} iframe=${frame.name} hidden=${String(isHidden)} url=${frame.src}`);
 }
 
+// Chromium keeps a same-process iframe's compositor hit-test data from that frame's last paint. Flipping
+// pointer-events on the <iframe> element does not repaint its content, so a static view (one that never
+// repaints on its own) stays a scroll target: wheel events still reach the focused view's DOM, but the
+// compositor scrolls the overlay above it and nothing moves. Holding a no-op filter on the iframe across
+// two rendered frames forces its content to repaint with the new hit-test state; a permanent filter or a
+// change undone within one frame does not.
+const hitTestRefreshTokens = new WeakMap<HTMLIFrameElement, number>();
+
+function refreshHitTesting(frame: HTMLIFrameElement): void {
+  const token = (hitTestRefreshTokens.get(frame) ?? 0) + 1;
+  hitTestRefreshTokens.set(frame, token);
+  frame.style.filter = 'opacity(1)';
+  requestAnimationFrame(() =>
+    requestAnimationFrame(() => {
+      if (hitTestRefreshTokens.get(frame) === token) {
+        frame.style.filter = '';
+      }
+    }),
+  );
+}
+
 function syncInputTarget(views: ReadonlyMap<string, HTMLIFrameElement>, focusedId: string | undefined): void {
   for (const [id, frame] of views) {
-    frame.style.pointerEvents =
+    const pointerEvents =
       frame.dataset.hidden === 'true' || (focusedId !== undefined && id !== focusedId) ? 'none' : 'auto';
+    if (frame.style.pointerEvents !== pointerEvents) {
+      frame.style.pointerEvents = pointerEvents;
+      refreshHitTesting(frame);
+    }
   }
 }
 
