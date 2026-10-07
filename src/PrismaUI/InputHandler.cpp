@@ -315,17 +315,15 @@ namespace PrismaUI {
         auto* inputManager = RE::BSInputDeviceManager::GetSingleton();
         const auto* keyboard = inputManager ? inputManager->GetKeyboard() : nullptr;
 
-        std::lock_guard lock(_keyHandoffMutex);
-        _keysHeldFromGame.reset();
-        _keysDownInView.reset();
-        _keysHeldFromView.reset();
+        auto keys = _keyHandoff.Acquire();
+        *keys = {};
         if (!keyboard) {
             return;
         }
 
         for (std::uint32_t keyCode = 1; keyCode < KEY_CODE_COUNT; ++keyCode) {
             if ((keyboard->curState[keyCode] & 0x80) != 0 && IsKeyPhysicallyDown(keyCode)) {
-                _keysHeldFromGame.set(keyCode);
+                keys->heldFromGame.set(keyCode);
             }
         }
     }
@@ -333,16 +331,21 @@ namespace PrismaUI {
     // Keys pressed in the view and still held: DirectInput may report that same press only now. Requiring the
     // physical state keeps only presses whose release the game is still to see, so every mark gets cleared.
     void InputHandler::HandKeysToGame() {
-        std::lock_guard lock(_keyHandoffMutex);
-        _keysHeldFromView.reset();
+        auto keys = _keyHandoff.Acquire();
+        keys->heldFromView.reset();
         for (std::uint32_t keyCode = 1; keyCode < KEY_CODE_COUNT; ++keyCode) {
-            if (_keysDownInView.test(keyCode) && IsKeyPhysicallyDown(keyCode)) {
-                _keysHeldFromView.set(keyCode);
+            if (keys->downInView.test(keyCode) && IsKeyPhysicallyDown(keyCode)) {
+                keys->heldFromView.set(keyCode);
             }
         }
-        _keysDownInView.reset();
-        _keysHeldFromGame.reset();
+        keys->downInView.reset();
+        keys->heldFromGame.reset();
     }
+
+    // Every mark waits for its own release, but a key let go while another app has the keyboard sends its
+    // release there, not to the game window or DirectInput. Without this reset the key would stay dead for the
+    // view (or the game) until the next focus change.
+    void InputHandler::ResetKeyHandoff() { *_keyHandoff.Acquire() = {}; }
 
     // WndProc side of the handoff, called while a view holds the keyboard. True when the message belongs to a
     // press the game already owns: its key-down, repeats, characters and release all stay out of the view.
@@ -353,26 +356,26 @@ namespace PrismaUI {
         }
 
         const auto keyCode = KeyCodeFromLParam(lParam);
-        std::lock_guard lock(_keyHandoffMutex);
+        auto keys = _keyHandoff.Acquire();
         switch (uMsg) {
             case WM_KEYDOWN:
             case WM_SYSKEYDOWN:
-                if (_keysHeldFromGame.test(keyCode)) {
+                if (keys->heldFromGame.test(keyCode)) {
                     return true;
                 }
-                _keysDownInView.set(keyCode);
+                keys->downInView.set(keyCode);
                 return false;
             case WM_KEYUP:
             case WM_SYSKEYUP:
-                _keysDownInView.reset(keyCode);
-                if (_keysHeldFromGame.test(keyCode)) {
-                    _keysHeldFromGame.reset(keyCode);
+                keys->downInView.reset(keyCode);
+                if (keys->heldFromGame.test(keyCode)) {
+                    keys->heldFromGame.reset(keyCode);
                     return true;
                 }
                 return false;
             case WM_CHAR:
             case WM_SYSCHAR:
-                return _keysHeldFromGame.test(keyCode);
+                return keys->heldFromGame.test(keyCode);
             default:
                 return false;
         }
@@ -381,8 +384,8 @@ namespace PrismaUI {
     // Game side of the handoff, called while no view holds the keyboard. The release passes: a sink that saw
     // the press during focus needs it, and one that did not ignores it.
     void InputHandler::DropKeysHeldFromView(RE::InputEvent* const* a_event) {
-        std::lock_guard lock(_keyHandoffMutex);
-        if (_keysHeldFromView.none()) {
+        auto keys = _keyHandoff.Acquire();
+        if (keys->heldFromView.none()) {
             return;
         }
 
@@ -391,10 +394,10 @@ namespace PrismaUI {
             const auto* buttonEvent = (&*it)->AsButtonEvent();
             const auto keyCode = buttonEvent ? buttonEvent->GetIDCode() : KEY_CODE_COUNT;
             if (!buttonEvent || buttonEvent->GetDevice() != RE::INPUT_DEVICE::kKeyboard || keyCode >= KEY_CODE_COUNT ||
-                !_keysHeldFromView.test(keyCode)) {
+                !keys->heldFromView.test(keyCode)) {
                 ++it;
             } else if (!buttonEvent->IsPressed()) {
-                _keysHeldFromView.reset(keyCode);
+                keys->heldFromView.reset(keyCode);
                 ++it;
             } else {
                 it = eventList.remove(it);
@@ -414,6 +417,10 @@ namespace PrismaUI {
             LPARAM imeLParam = lParam;
             self._imeHelper.ModifySetContextLParam(&imeLParam, uMsg);
             lParam = imeLParam;
+        }
+
+        if (uMsg == WM_ACTIVATEAPP && !wParam) {
+            self.ResetKeyHandoff();
         }
 
         if (self._isAnyInputCaptureActive.load()) {
