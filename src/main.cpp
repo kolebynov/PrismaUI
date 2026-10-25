@@ -1,9 +1,9 @@
+#include <Hooks/HookInstaller.h>
+#include <Hooks/HooksLib.h>
 #include <spdlog/sinks/basic_file_sink.h>
 
 #include "API/API.h"
 #include "Globals.h"
-#include "Hooks/HookInstaller.h"
-#include "Hooks/HooksLib.h"
 #include "PrismaUI/Bootstrapper.h"
 #include "PrismaUI/Renderer.h"
 #include "PrismaUI_API.h"
@@ -42,7 +42,7 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* a_s
 
     MainThreadScheduler.SetThreadId(std::this_thread::get_id());
 
-    Hooks::HookInstaller<Hooks::UpdateHook>::Install([](const auto& originalFunc, RE::Main* main, float delta) {
+    Hooks::HookInstaller<Hooks::MainLoopUpdateHook>::Install([](const auto& originalFunc, RE::Main* main, float delta) {
         auto initializeResult = PrismaUI::Bootstrapper::Initialize();
         [[unlikely]]
         if (!initializeResult.has_value()) {

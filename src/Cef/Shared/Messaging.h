@@ -1,5 +1,7 @@
 #pragma once
 
+#include <VariantUtils.h>
+
 #include <concepts>
 #include <functional>
 #include <optional>
@@ -7,7 +9,6 @@
 #include <variant>
 
 #include "CefUtils.h"
-#include "Utils/VariantUtils.h"
 #include "include/cef_frame.h"
 #include "include/cef_process_message.h"
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <ResourceLock.h>
 #include <Windows.h>
 #include <d3d11.h>
 #include <d3d11_1.h>
@@ -12,8 +13,6 @@
 #include <memory>
 #include <mutex>
 #include <semaphore>
-
-#include "Utils/ResourceLock.h"
 
 namespace PrismaUI::Cef {
     struct OverlayTextureInfo {

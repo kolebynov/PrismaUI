@@ -123,9 +123,11 @@ add_executable(PrismaUICefSubprocess WIN32
     ${PRISMAUI_CEF_SUBPROCESS_SOURCES}
 )
 
+# The subprocess has no CommonLib, so it takes only SKSEHelpers' CommonLib-free headers (VariantUtils.h) by include path.
 target_include_directories(PrismaUICefSubprocess
     PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    "${SKSEHELPERS_DIR}/src"
     "${CMAKE_BINARY_DIR}/generated"
 )
 

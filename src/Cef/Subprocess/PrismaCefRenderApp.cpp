@@ -1,5 +1,7 @@
 #include "PrismaCefRenderApp.h"
 
+#include <VariantUtils.h>
+
 #include <mutex>
 #include <string>
 #include <unordered_map>
@@ -14,7 +16,6 @@
 #include "Cef/Shared/RendererToBrowserMessages.h"
 #include "Cef/Shared/ViewUtils.h"
 #include "PrismaBootstrapScript.generated.h"
-#include "Utils/VariantUtils.h"
 #include "include/base/cef_logging.h"
 #include "include/cef_browser.h"
 #include "include/cef_frame.h"

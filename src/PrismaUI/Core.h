@@ -1,5 +1,7 @@
 #pragma once
 
+#include <ResourceLock.h>
+
 #include <atomic>
 #include <cstdint>
 #include <functional>
@@ -8,8 +10,6 @@
 #include <mutex>
 #include <queue>
 #include <string>
-
-#include "Utils/ResourceLock.h"
 
 namespace PRISMA_UI_API {
     enum class ConsoleMessageLevel : uint8_t;

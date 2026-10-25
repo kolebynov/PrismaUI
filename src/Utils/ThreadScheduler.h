@@ -1,9 +1,9 @@
 ﻿#pragma once
+#include <ResourceLock.h>
+
 #include <functional>
 #include <queue>
 #include <thread>
-
-#include "ResourceLock.h"
 
 class ThreadScheduler {
 public:

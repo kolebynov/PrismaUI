@@ -5,8 +5,10 @@
 include(commonlibsse)
 include(cef)
 
-# MinHook (vcpkg: minhook) provides the minhook::minhook target.
-find_package(minhook CONFIG REQUIRED)
+# SKSEHelpers (header-only): hooks, call pipelines, ResourceLock, PointerLinkedList, variant/trait utilities.
+# Reuses the CommonLibSSE::CommonLibSSE target added by commonlibsse.cmake and brings in minhook::minhook.
+set(SKSEHELPERS_DIR "${CMAKE_SOURCE_DIR}/external/SKSEHelpers")
+add_subdirectory("${SKSEHELPERS_DIR}" "${CMAKE_BINARY_DIR}/external_builds/SKSEHelpers" EXCLUDE_FROM_ALL)
 
 # Helper function to add external directories to a target
 function(add_external_dependencies target_name)
@@ -16,6 +18,5 @@ function(add_external_dependencies target_name)
         ${CMAKE_SOURCE_DIR}/external/commonlibsse-ng/include
     )
 
-    # Link MinHook for trampoline-based detours
-    target_link_libraries(${target_name} PRIVATE minhook::minhook)
+    target_link_libraries(${target_name} PRIVATE SKSEHelpers::SKSEHelpers)
 endfunction()

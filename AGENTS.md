@@ -9,7 +9,7 @@ This repository is an SKSE plugin for Skyrim that exposes a C API for mods to re
 - Treat CEF browser/frame/V8 objects as CEF-UI-thread-owned. Route work through `Cef::CefRuntime` and `CefPostTask(TID_UI, ...)`; CEF renderer-process V8 work belongs in `PrismaCefRenderApp` on `TID_RENDERER`.
 - Treat D3D11 texture/resource work as render-thread work. Texture creation, mapping, drawing, and release happen on the present/render path; the only drawn surface is the CEF overlay texture (plus the Prisma cursor).
 - Public API callbacks into mods must be scheduled with `MainThreadScheduler.Post` (`src/Globals.h`) — do not call mod code directly from CEF UI/renderer threads.
-- Do not directly touch `external/commonlibsse-ng` unless the task is explicitly about vendored CommonLibSSE.
+- Do not directly touch `external/commonlibsse-ng` unless the task is explicitly about vendored CommonLibSSE. The same applies to the `external/SKSEHelpers` submodule (https://github.com/kolebynov/SKSEHelpers): fix shared helpers upstream, not in the submodule checkout.
 - Use the harness `search` tool for content lookup and `find` for filename lookup. The `external/` and `build/external_builds/` trees are large; scope searches to `src`, `cmake`, `shell/app`, `docs`, and root docs unless dependency code is relevant.
 - Use existing logging style via `logger::info/warn/error/debug/critical`.
 - Follow `.clang-format`: Google base style, 4-space indents, no tabs, 120-column limit.
@@ -63,11 +63,11 @@ This repository is an SKSE plugin for Skyrim that exposes a C API for mods to re
 - `src/PrismaUI/ImeHelper.*`: Windows IME context management and custom JS-dispatched composition/candidate state.
 - `src/PrismaUI/Communication.*`: JS eval, native-to-JS calls, JS-to-C++ callback binding; backed by CEF process messages.
 - `src/PrismaUI/ViewOperationQueue.*`: per-view operation queues processed from the present loop. Each `ProcessNextOperation` runs inline on the present thread (no separate executor).
-- `src/Hooks/`: trampoline install wrappers for D3D hooks.
+- `external/SKSEHelpers/src/` (submodule, header-only `SKSEHelpers::SKSEHelpers`): hook definitions and installer (`<Hooks/HookInstaller.h>`, `<Hooks/HooksLib.h>`: `MainLoopUpdateHook`, `D3DInitHook`, `D3DPresentHook`, `RendererBegin`), `<CallPipeline.h>`, `<TraitUtils.h>`, `<VariantUtils.h>`, `<ResourceLock.h>`, `<PointerLinkedList.h>`. Include them with angle brackets; do not re-add local copies. `PrismaUICefSubprocess` has no CommonLib and only gets the include path, so it may use CommonLib-free headers (`VariantUtils.h`) only.
 - `src/Menus/PrismaUIMenu.*`: the single always-open, movie-less `RE::IMenu` PrismaUI registers. Its `PostDisplay` drives the overlay draw, and its static `Focus`/`Unfocus` own modal/menu-mode state plus the vanilla cursor (`kUsesCursor` + `Cursor Menu` show/hide). There is no `FocusMenu` and no vanilla `CursorMenu` hook.
 - `src/Menus/Utils.h`: menu lookup/open-state helpers and UI-message posting (`SendMenuMessage` on the UI thread, `PostMenuMessage` from any thread).
-- `src/Utils/`: `DllLoader` (CEF only), encoding helpers, NanoID, `WinKeyHandler` (Win32→`CefKeyEvent`).
-- `cmake/`: `commonlibsse.cmake`, `cef.cmake`, `ExternalDependencies.cmake`, `CompilerFlags.cmake`. There is no `ultralight.cmake`.
+- `src/Utils/`: `DllLoader` (CEF only), encoding helpers, NanoID, `ThreadScheduler` (backs `MainThreadScheduler`), `WinKeyHandler` (Win32→`CefKeyEvent`).
+- `cmake/`: `commonlibsse.cmake`, `cef.cmake`, `ExternalDependencies.cmake` (adds the SKSEHelpers subdirectory, which reuses the `CommonLibSSE::CommonLibSSE` target and brings `minhook::minhook`), `CompilerFlags.cmake`. There is no `ultralight.cmake`.
 - `shell/app/`: the CEF shell page frontend — a standalone TypeScript + Vite project (`prismaui-cef-shell`). `src/main.ts` bootstraps the page; `src/shell.ts` builds the `PrismaShellApi` command bus (`createPrismaShell`) that `CefRuntime` drives to create/show/hide/focus/order iframes named with decimal `PrismaView` ids; `src/types.ts` holds the shared TS types; `src/style.css` and `index.html` are the page shell. Built via `npm run build` into `shell/dist` (the `PrismaUIShell` target); `shell/dist` is generated output, not source. Edit the shell command bus here.
 
 ## Runtime Architecture

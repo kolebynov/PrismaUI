@@ -1,10 +1,11 @@
 #include "Bootstrapper.h"
 
+#include <Hooks/HookInstaller.h>
+#include <Hooks/HooksLib.h>
+
 #include "Cef/Browser/CefRuntime.h"
 #include "Core.h"
 #include "Globals.h"
-#include "Hooks/HookInstaller.h"
-#include "Hooks/HooksLib.h"
 #include "InputHandler.h"
 #include "Renderer.h"
 #include "ViewManager.h"

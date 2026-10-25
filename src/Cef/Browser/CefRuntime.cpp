@@ -5,6 +5,7 @@
     #undef GetNextSibling
 #endif
 
+#include <VariantUtils.h>
 #include <dxgi.h>
 
 #include <algorithm>
@@ -36,7 +37,6 @@
 #include "Cef/Subprocess/PrismaCefApp.h"
 #include "PrismaUI/Communication.h"
 #include "Utils/DllLoader.h"
-#include "Utils/VariantUtils.h"
 #include "include/cef_app.h"
 #include "include/cef_browser.h"
 #include "include/cef_task.h"

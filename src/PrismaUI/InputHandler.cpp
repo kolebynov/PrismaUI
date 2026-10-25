@@ -1,5 +1,6 @@
 #include "InputHandler.h"
 
+#include <PointerLinkedList.h>
 #include <commctrl.h>
 
 #include "Cef/Browser/CefRuntime.h"
@@ -9,7 +10,6 @@
 #include "Globals.h"
 #include "ImeHelper.h"
 #include "Utils/Encoding.h"
-#include "Utils/PointerLinkedList.h"
 #include "Utils/WinKeyHandler/WinKeyHandler.h"
 #include "include/internal/cef_types.h"
 #pragma comment(lib, "comctl32.lib")

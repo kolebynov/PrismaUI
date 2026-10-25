@@ -1,3 +1,6 @@
 [submodule "external/commonlibsse-ng"]
 	path = external/commonlibsse-ng
 	url = https://github.com/alandtse/CommonLibVR.git
+[submodule "external/SKSEHelpers"]
+	path = external/SKSEHelpers
+	url = https://github.com/kolebynov/SKSEHelpers
