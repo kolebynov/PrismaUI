@@ -405,6 +405,45 @@ namespace PrismaUI {
         }
     }
 
+    bool InputHandler::IsAnyMouseButtonPhysicallyDown() {
+        for (const int virtualKey : {VK_LBUTTON, VK_RBUTTON, VK_MBUTTON}) {
+            if ((GetAsyncKeyState(virtualKey) & 0x8000) != 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    void InputHandler::WatchMouseReleaseForGame() {
+        _mouseReleasedToGame.store(false);
+        _watchMouseRelease.store(true);
+    }
+
+    bool InputHandler::ConsumeMouseReleasedToGame() { return _mouseReleasedToGame.exchange(false); }
+
+    // Game side of a deferred focus, called while no view holds the input. The release is left in the list, so
+    // MenuControls turns it into the mouse-up of the menu that saw the press; ViewManager applies the focus on
+    // the next main-loop tick, after that.
+    void InputHandler::NoteMouseReleaseForGame(RE::InputEvent* const* a_event) {
+        if (!_watchMouseRelease.load()) {
+            return;
+        }
+
+        bool sawRelease = false;
+        PointerLinkedList eventList{const_cast<RE::InputEvent**>(a_event)};
+        for (auto it = eventList.begin(); it != eventList.end(); ++it) {
+            const auto* buttonEvent = (&*it)->AsButtonEvent();
+            if (buttonEvent && buttonEvent->GetDevice() == RE::INPUT_DEVICE::kMouse && buttonEvent->IsUp()) {
+                sawRelease = true;
+            }
+        }
+
+        if (sawRelease && !IsAnyMouseButtonPhysicallyDown()) {
+            _watchMouseRelease.store(false);
+            _mouseReleasedToGame.store(true);
+        }
+    }
+
     LRESULT CALLBACK InputHandler::SubclassProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam, UINT_PTR,
                                                 DWORD_PTR dwRefData) {
         InputHandler& self = *reinterpret_cast<InputHandler*>(dwRefData);
@@ -576,6 +615,7 @@ namespace PrismaUI {
 
         if (!_isAnyInputCaptureActive.load()) {
             DropKeysHeldFromView(a_event);
+            NoteMouseReleaseForGame(a_event);
             return RE::BSEventNotifyControl::kContinue;
         }
 

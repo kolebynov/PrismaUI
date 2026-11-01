@@ -6,6 +6,7 @@
 #include "Globals.h"
 #include "PrismaUI/Bootstrapper.h"
 #include "PrismaUI/Renderer.h"
+#include "PrismaUI/ViewManager.h"
 #include "PrismaUI_API.h"
 
 static void SKSEMessageHandler(SKSE::MessagingInterface::Message* message) {
@@ -51,6 +52,7 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* a_s
         }
 
         MainThreadScheduler.ExecuteTasks();
+        PrismaUI::ViewManager::ProcessDeferredFocus();
         originalFunc(main, delta);
     });
 

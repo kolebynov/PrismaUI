@@ -27,6 +27,13 @@ namespace PrismaUI {
         void DisableInputCapture(Core::PrismaViewId viewId);
         void ClearImeState(Core::PrismaViewId viewId);
         bool IsAnyInputCaptureActive() const;
+
+        // Mouse side of a focus deferred mid-click (see ViewManager::Focus): the game keeps the mouse until it
+        // has seen the release of every button that was down when the focus was requested.
+        static bool IsAnyMouseButtonPhysicallyDown();
+        void WatchMouseReleaseForGame();
+        bool ConsumeMouseReleasedToGame();
+
         void ProcessEvents();
         void Shutdown();
         void OnExit(std::move_only_function<void()>&& callback);
@@ -54,6 +61,7 @@ namespace PrismaUI {
         void ResetKeyHandoff();
         bool IsKeyMessageHeldFromGame(UINT uMsg, LPARAM lParam);
         void DropKeysHeldFromView(RE::InputEvent* const* a_event);
+        void NoteMouseReleaseForGame(RE::InputEvent* const* a_event);
 
         HWND _hWnd{};
         ResourceLock<std::map<Core::PrismaViewId, std::shared_ptr<Core::PrismaView>>>* _viewsMap{};
@@ -74,6 +82,8 @@ namespace PrismaUI {
             std::bitset<256> heldFromView;  // still down when focus ended; their game events are dropped
         };
         ResourceLock<KeyHandoff> _keyHandoff;
+        std::atomic<bool> _watchMouseRelease = false;    // a deferred focus waits for the game to see a release
+        std::atomic<bool> _mouseReleasedToGame = false;  // that release went through; consumed by ViewManager
         // What the game keeps seeing in RE::MenuCursor while a view is focused: the position the cursor had
         // when focus started. Vanilla menus underneath hit-test MenuCursor every frame, so freezing it is
         // what keeps them inert; an off-screen position would make MapMenu edge-scroll to the corner.

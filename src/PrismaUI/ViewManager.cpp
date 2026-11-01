@@ -10,6 +10,34 @@ namespace PrismaUI::ViewManager {
     using namespace Core;
 
     namespace {
+        // A focus requested while the game owns the mouse and a button is still down - typically a view opened
+        // by clicking a row of a vanilla list menu: the row reacts to the mouse-down, a script opens the view,
+        // and the button is released only afterwards. Capturing input at that point swallows the release twice
+        // over: ProcessEvent drops mouse buttons, and the focused PrismaUIMenu is kModal, which stops
+        // UI::ProcessMessages from passing the "Top Menu" mouse-up of ClickHandler down the menu stack. The Flash
+        // list then keeps a pressed button and ignores hover until the next click. So the view is marked focused
+        // at once, but the native side effects wait until the game has seen the release.
+        struct DeferredFocus {
+            PrismaViewId viewId = 0;
+            bool pauseGame = false;
+            std::chrono::steady_clock::time_point since{};
+        };
+        ResourceLock<DeferredFocus> deferredFocus;
+
+        // The release can go to another window (Alt-Tab), and then no event comes: give up waiting once the
+        // button is physically up for a while, or after a hard limit.
+        constexpr auto DEFERRED_FOCUS_RELEASE_GRACE = std::chrono::milliseconds(500);
+        constexpr auto DEFERRED_FOCUS_TIMEOUT = std::chrono::seconds(2);
+
+        bool CancelDeferredFocus(PrismaViewId viewId) {
+            auto deferred = deferredFocus.Acquire();
+            if (deferred->viewId != viewId) {
+                return false;
+            }
+            *deferred = {};
+            return true;
+        }
+
         // Vanilla cancels a held attack/cast through PlayerControls' menu-mode transition, not through the
         // button release: the release never reaches AttackBlockHandler because no menu-mode input context
         // maps the attack buttons (see Interface/Controls/PC/controlmap.txt), so CanProcess rejects it.
@@ -69,6 +97,14 @@ namespace PrismaUI::ViewManager {
         // controls, optionally close FocusMenu, drop the pause counter. closeFocusMenu==false
         // is used when transferring focus between Prisma views so the focus surface stays open.
         void ApplyUnfocusSideEffects(PrismaViewId viewId, const std::shared_ptr<PrismaView>& viewData) {
+            if (CancelDeferredFocus(viewId)) {
+                // Nothing native was applied yet: only the CEF focus has to go.
+                Cef::CefRuntime::GetSingleton().BlurShellView(viewId);
+                viewData->isFocused.store(false);
+                logger::info("Unfocus: View [{}] dropped its deferred focus.", viewId);
+                return;
+            }
+
             if (viewData->isPaused.load()) {
                 if (auto* ui = RE::UI::GetSingleton()) {
                     if (ui->numPausesGame > 0) {
@@ -242,6 +278,10 @@ namespace PrismaUI::ViewManager {
             return true;
         }
 
+        // A press made while a view held the input went to CEF, not to the game; only the game's own presses
+        // need their release handed back (see DeferredFocus).
+        const bool gameOwnsMouse = !InputHandler::GetSingleton().IsAnyInputCaptureActive();
+
         // Queue unfocus on every other currently-focused view. We pass closeFocusMenu=false
         // so the focus surface stays open during transfer.
         std::vector<PrismaViewId> viewsToUnfocus;
@@ -264,6 +304,15 @@ namespace PrismaUI::ViewManager {
 
         viewData->isFocused.store(true);
         Cef::CefRuntime::GetSingleton().FocusShellView(viewId);
+
+        if (gameOwnsMouse && InputHandler::IsAnyMouseButtonPhysicallyDown()) {
+            *deferredFocus.Acquire() = {viewId, pauseGame, std::chrono::steady_clock::now()};
+            InputHandler::GetSingleton().WatchMouseReleaseForGame();
+            logger::info("Focus: View [{}] (iframe={}) focused; input capture waits for the mouse release.", viewId,
+                         viewData->iframeName);
+            return true;
+        }
+
         ApplyFocusSideEffects(viewId, viewData, pauseGame);
 
         logger::info("Focus: View [{}] (iframe={}) focused: pauseGame={}", viewId, viewData->iframeName, pauseGame);
@@ -434,6 +483,35 @@ namespace PrismaUI::ViewManager {
         } else {
             logger::warn("RegisterConsoleCallback: View ID [{}] not found.", viewId);
         }
+    }
+
+    void ProcessDeferredFocus() {
+        DeferredFocus pending;
+        {
+            auto deferred = deferredFocus.Acquire();
+            if (deferred->viewId == 0) {
+                return;
+            }
+
+            const auto waited = std::chrono::steady_clock::now() - deferred->since;
+            const bool released =
+                InputHandler::GetSingleton().ConsumeMouseReleasedToGame() ||
+                (waited >= DEFERRED_FOCUS_RELEASE_GRACE && !InputHandler::IsAnyMouseButtonPhysicallyDown());
+            if (!released && waited < DEFERRED_FOCUS_TIMEOUT) {
+                return;
+            }
+
+            pending = *deferred;
+            *deferred = {};
+        }
+
+        auto viewData = LookupView(pending.viewId);
+        if (!viewData || !viewData->isFocused.load() || viewData->isHidden.load()) {
+            return;
+        }
+
+        ApplyFocusSideEffects(pending.viewId, viewData, pending.pauseGame);
+        logger::info("Focus: View [{}] input capture applied after the mouse release.", pending.viewId);
     }
 
     void Shutdown() {

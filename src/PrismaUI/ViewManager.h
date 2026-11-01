@@ -33,6 +33,9 @@ namespace PrismaUI::ViewManager {
 
     bool HasAnyActiveFocus();
 
+    // Main thread, once per main-loop tick: applies a focus deferred until the game saw a mouse release.
+    void ProcessDeferredFocus();
+
     // Console message callback registration
     void RegisterConsoleCallback(
         Core::PrismaViewId viewId,
