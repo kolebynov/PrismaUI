@@ -1,5 +1,6 @@
 #include <Hooks/HookInstaller.h>
 #include <Hooks/HooksLib.h>
+#include <SkyrimSchedulers.h>
 #include <spdlog/sinks/basic_file_sink.h>
 
 #include "API/API.h"
@@ -40,7 +41,9 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* a_s
 
     g_messaging->RegisterListener("SKSE", SKSEMessageHandler);
 
-    MainThreadScheduler.SetThreadId(std::this_thread::get_id());
+    // Installed before PrismaUI's own Main::Update hook so that hook wraps it: initialization runs first, then the
+    // dispatcher drains the main-thread tasks before the original Main::Update.
+    SkyrimSchedulers::Install();
 
     Hooks::HookInstaller<Hooks::MainLoopUpdateHook>::Install([](const auto& originalFunc, RE::Main* main, float delta) {
         auto initializeResult = PrismaUI::Bootstrapper::Initialize();
@@ -50,7 +53,6 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* a_s
             throw std::runtime_error(std::format("Failed to initialize PrismaUI: {}", initializeResult.error()));
         }
 
-        MainThreadScheduler.ExecuteTasks();
         originalFunc(main, delta);
     });
 

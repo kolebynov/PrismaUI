@@ -768,7 +768,7 @@ namespace PrismaUI {
             logger::info("WndProc hook installed successfully from render thread.");
         } else {
             logger::warn("Direct installation failed, scheduling on main thread...");
-            MainThreadScheduler.Post([this] {
+            MainThreadDispatcher().Dispatch([this] {
                 logger::info("Attempting to install WndProc hook from main thread...");
                 if (InstallWndProcHookAttempt()) {
                     logger::info("WndProc hook installed successfully from main thread.");

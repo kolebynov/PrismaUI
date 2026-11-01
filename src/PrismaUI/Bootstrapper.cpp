@@ -45,7 +45,7 @@ namespace PrismaUI::Bootstrapper {
     static std::expected<void, std::string> InitializeImpl() {
         logger::info("Initializing PrismaUI...");
 
-        if (!MainThreadScheduler.IsTargetThread()) {
+        if (!MainThreadDispatcher().IsTargetThread()) {
             logger::critical("PrismaUI must be initialized on the main thread");
             return std::unexpected("PrismaUI must be initialized on the main thread");
         }
@@ -113,7 +113,7 @@ namespace PrismaUI::Bootstrapper {
         auto initializeResult = InitializeImpl();
         IsInitialized = initializeResult.has_value();
         if (IsInitialized) {
-            InputHandler::GetSingleton().OnExit([] { MainThreadScheduler.Post([] { Shutdown(); }); });
+            InputHandler::GetSingleton().OnExit([] { MainThreadDispatcher().Dispatch([] { Shutdown(); }); });
         } else {
             Shutdown();
         }

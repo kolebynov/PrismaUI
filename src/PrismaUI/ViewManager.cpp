@@ -24,7 +24,7 @@ namespace PrismaUI::ViewManager {
         // releasing the mouse inside a focused view. Drive the same transition on the main thread; the
         // sink only reads the mode, but pass the real menu name anyway.
         void NotifyPlayerControlsMenuMode(RE::MenuModeChangeEvent::Mode mode) {
-            MainThreadScheduler.Post([mode] {
+            MainThreadDispatcher().Dispatch([mode] {
                 auto* controls = RE::PlayerControls::GetSingleton();
                 if (!controls) {
                     return;

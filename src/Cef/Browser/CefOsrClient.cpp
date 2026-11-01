@@ -153,7 +153,7 @@ namespace PrismaUI::Cef {
 
     void CefOsrClient::OnPaint(CefRefPtr<CefBrowser>, PaintElementType type, const RectList& dirtyRects,
                                const void* buffer, int width, int height) {
-        MainThreadScheduler.Post([] {
+        MainThreadDispatcher().Dispatch([] {
             logger::critical("Fallback CPU OnPaint is called");
             throw std::runtime_error("Fallback CPU OnPaint is called");
         });

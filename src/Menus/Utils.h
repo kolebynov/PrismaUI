@@ -28,7 +28,7 @@ namespace PrismaUI::Menus {
 
     // Callable from any thread; the message is enqueued from the main UI thread.
     inline void PostMenuMessage(std::string_view menuName, RE::UI_MESSAGE_TYPE messageType) {
-        MainThreadScheduler.Post(
+        MainThreadDispatcher().Dispatch(
             [name = RE::BSFixedString(menuName), messageType] { SendMenuMessage(name, messageType); });
     }
 

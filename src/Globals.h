@@ -1,5 +1,6 @@
 ﻿#pragma once
 
-#include "Utils/ThreadScheduler.h"
+#include <ThreadDispatcher.h>
 
-extern ThreadScheduler MainThreadScheduler;
+// SkyrimSchedulers' main-thread dispatcher; SKSEPlugin_Load creates it on the main thread.
+ThreadDispatcher& MainThreadDispatcher();

@@ -144,7 +144,7 @@ void PluginAPI::PrismaUIInterface::RegisterConsoleCallback(PrismaView view,
     if (callback) {
         auto wrappedCallback = [callback](PrismaUI::Core::PrismaViewId id, PRISMA_UI_API::ConsoleMessageLevel level,
                                           const std::string& msg) {
-            MainThreadScheduler.Post([callback, id, level, msg]() { callback(id, level, msg.c_str()); });
+            MainThreadDispatcher().Dispatch([callback, id, level, msg]() { callback(id, level, msg.c_str()); });
         };
         PrismaUI::ViewManager::RegisterConsoleCallback(view, wrappedCallback);
     } else {
@@ -192,7 +192,7 @@ void PluginAPI::PrismaUIInterface::RegisterConsoleCallbackV2(PrismaView view,
 
     auto wrappedCallback = [callback, callbackState](PrismaUI::Core::PrismaViewId id,
                                                      PRISMA_UI_API::ConsoleMessageLevel level, const std::string& msg) {
-        MainThreadScheduler.Post(
+        MainThreadDispatcher().Dispatch(
             [callback, id, level, msg, callbackState] { callback(id, level, msg.c_str(), callbackState); });
     };
     PrismaUI::ViewManager::RegisterConsoleCallback(view, wrappedCallback);
@@ -217,7 +217,8 @@ PrismaView PluginAPI::PrismaUIInterface::CreateViewInternal(
     std::function<void(PrismaUI::Core::PrismaViewId)> domReadyWrapper = nullptr;
     if (onDomReadyCallback) {
         domReadyWrapper = [callback = std::move(onDomReadyCallback)](PrismaUI::Core::PrismaViewId viewId) {
-            MainThreadScheduler.Post([callback = std::move(callback), id = viewId] { std::invoke(callback, id); });
+            MainThreadDispatcher().Dispatch(
+                [callback = std::move(callback), id = viewId] { std::invoke(callback, id); });
         };
     }
 
@@ -245,7 +246,7 @@ void PluginAPI::PrismaUIInterface::InvokeInternal(PrismaView view, const char* s
 
     if (callback) {
         callbackWrapper = [callback = std::move(callback)](const std::string& result) {
-            MainThreadScheduler.Post(
+            MainThreadDispatcher().Dispatch(
                 [targetCallback = std::move(callback), data = result] { targetCallback(data.c_str()); });
         };
     }
@@ -260,7 +261,8 @@ void PluginAPI::PrismaUIInterface::RegisterJSListenerInternal(PrismaView view, c
     }
 
     PrismaUI::Core::SimpleJSCallback callbackWrapper = [callback = std::move(callback)](const std::string& arg) {
-        MainThreadScheduler.Post([targetCallback = std::move(callback), data = arg] { targetCallback(data.c_str()); });
+        MainThreadDispatcher().Dispatch(
+            [targetCallback = std::move(callback), data = arg] { targetCallback(data.c_str()); });
     };
 
     return PrismaUI::Communication::RegisterJSListener(view, functionName, callbackWrapper);
