@@ -2,9 +2,17 @@
 # This module intentionally makes CEF available to the build without changing
 # PrismaUI's plugin runtime startup path.
 
+set(PRISMAUI_CEF_VERSION "156.0.15+gcf671c0+chromium-156.0.8078.80")
+
 set(PRISMAUI_CEF_ARCHIVE
-    "${CMAKE_SOURCE_DIR}/external/cef_binary_147.0.14+g76d2442+chromium-147.0.7727.138_windows64.tar.bz2"
-    CACHE FILEPATH "Path to the CEF binary distribution archive")
+    ""
+    CACHE FILEPATH "Path to a local CEF binary distribution archive; empty uses the pinned PRISMAUI_CEF_VERSION")
+
+if(PRISMAUI_CEF_ARCHIVE)
+    set(_PRISMAUI_CEF_ARCHIVE "${PRISMAUI_CEF_ARCHIVE}")
+else()
+    set(_PRISMAUI_CEF_ARCHIVE "${CMAKE_SOURCE_DIR}/external/cef_binary_${PRISMAUI_CEF_VERSION}_windows64.tar.bz2")
+endif()
 
 if(DEFINED BUILD_ROOT)
     set(_PRISMAUI_CEF_DEFAULT_EXTRACT_DIR "${BUILD_ROOT}/external_builds/cef")
@@ -16,20 +24,20 @@ set(PRISMAUI_CEF_EXTRACT_DIR
     "${_PRISMAUI_CEF_DEFAULT_EXTRACT_DIR}"
     CACHE PATH "Directory used for the extracted CEF binary distribution")
 
-get_filename_component(PRISMAUI_CEF_ARCHIVE "${PRISMAUI_CEF_ARCHIVE}" ABSOLUTE)
+get_filename_component(_PRISMAUI_CEF_ARCHIVE "${_PRISMAUI_CEF_ARCHIVE}" ABSOLUTE)
 get_filename_component(PRISMAUI_CEF_EXTRACT_DIR "${PRISMAUI_CEF_EXTRACT_DIR}" ABSOLUTE)
 
-if(NOT EXISTS "${PRISMAUI_CEF_ARCHIVE}")
-    get_filename_component(_PRISMAUI_CEF_ARCHIVE_NAME "${PRISMAUI_CEF_ARCHIVE}" NAME)
+if(NOT EXISTS "${_PRISMAUI_CEF_ARCHIVE}")
+    get_filename_component(_PRISMAUI_CEF_ARCHIVE_NAME "${_PRISMAUI_CEF_ARCHIVE}" NAME)
     # CEF build filenames contain '+' which must be percent-encoded in the download URL.
     string(REPLACE "+" "%2B" _PRISMAUI_CEF_ARCHIVE_URL_NAME "${_PRISMAUI_CEF_ARCHIVE_NAME}")
     set(_PRISMAUI_CEF_DOWNLOAD_URL "https://cef-builds.spotifycdn.com/${_PRISMAUI_CEF_ARCHIVE_URL_NAME}")
 
     message(STATUS "CEF archive not found, downloading: ${_PRISMAUI_CEF_DOWNLOAD_URL}")
-    get_filename_component(_PRISMAUI_CEF_ARCHIVE_DIR "${PRISMAUI_CEF_ARCHIVE}" DIRECTORY)
+    get_filename_component(_PRISMAUI_CEF_ARCHIVE_DIR "${_PRISMAUI_CEF_ARCHIVE}" DIRECTORY)
     file(MAKE_DIRECTORY "${_PRISMAUI_CEF_ARCHIVE_DIR}")
 
-    set(_PRISMAUI_CEF_ARCHIVE_PART "${PRISMAUI_CEF_ARCHIVE}.part")
+    set(_PRISMAUI_CEF_ARCHIVE_PART "${_PRISMAUI_CEF_ARCHIVE}.part")
     file(DOWNLOAD
         "${_PRISMAUI_CEF_DOWNLOAD_URL}"
         "${_PRISMAUI_CEF_ARCHIVE_PART}"
@@ -49,48 +57,45 @@ if(NOT EXISTS "${PRISMAUI_CEF_ARCHIVE}")
             "or configure PRISMAUI_CEF_ARCHIVE to a local CEF binary archive.")
     endif()
 
-    file(RENAME "${_PRISMAUI_CEF_ARCHIVE_PART}" "${PRISMAUI_CEF_ARCHIVE}")
-    message(STATUS "CEF archive downloaded: ${PRISMAUI_CEF_ARCHIVE}")
+    file(RENAME "${_PRISMAUI_CEF_ARCHIVE_PART}" "${_PRISMAUI_CEF_ARCHIVE}")
+    message(STATUS "CEF archive downloaded: ${_PRISMAUI_CEF_ARCHIVE}")
 endif()
 
-function(_prismaui_find_cef_root out_var search_dir)
-    set(_result "")
+# A CEF archive holds a single top-level directory named after the archive, so the extracted root is
+# looked up by that exact name: other CEF versions extracted next to it are never picked up.
+get_filename_component(_PRISMAUI_CEF_ARCHIVE_NAME "${_PRISMAUI_CEF_ARCHIVE}" NAME)
+string(REGEX REPLACE "\\.tar\\.bz2$" "" _PRISMAUI_CEF_ROOT_NAME "${_PRISMAUI_CEF_ARCHIVE_NAME}")
+set(_PRISMAUI_CEF_ROOT "${PRISMAUI_CEF_EXTRACT_DIR}/${_PRISMAUI_CEF_ROOT_NAME}")
+set(_PRISMAUI_CEF_ROOT_MARKERS
+    "${_PRISMAUI_CEF_ROOT}/cmake/FindCEF.cmake"
+    "${_PRISMAUI_CEF_ROOT}/include/cef_app.h"
+    "${_PRISMAUI_CEF_ROOT}/libcef_dll/CMakeLists.txt")
 
-    if(EXISTS "${search_dir}/cmake/FindCEF.cmake"
-       AND EXISTS "${search_dir}/include/cef_app.h"
-       AND EXISTS "${search_dir}/libcef_dll/CMakeLists.txt")
-        set(_result "${search_dir}")
-    else()
-        file(GLOB _cef_root_candidates LIST_DIRECTORIES true "${search_dir}/*")
-        foreach(_candidate IN LISTS _cef_root_candidates)
-            if(IS_DIRECTORY "${_candidate}"
-               AND EXISTS "${_candidate}/cmake/FindCEF.cmake"
-               AND EXISTS "${_candidate}/include/cef_app.h"
-               AND EXISTS "${_candidate}/libcef_dll/CMakeLists.txt")
-                set(_result "${_candidate}")
-                break()
-            endif()
-        endforeach()
-    endif()
-
-    set(${out_var} "${_result}" PARENT_SCOPE)
+function(_prismaui_cef_root_extracted out_var)
+    set(_result TRUE)
+    foreach(_marker IN LISTS _PRISMAUI_CEF_ROOT_MARKERS)
+        if(NOT EXISTS "${_marker}")
+            set(_result FALSE)
+        endif()
+    endforeach()
+    set(${out_var} ${_result} PARENT_SCOPE)
 endfunction()
 
-file(MAKE_DIRECTORY "${PRISMAUI_CEF_EXTRACT_DIR}")
-_prismaui_find_cef_root(_PRISMAUI_CEF_ROOT "${PRISMAUI_CEF_EXTRACT_DIR}")
-
-if(NOT _PRISMAUI_CEF_ROOT)
-    message(STATUS "Extracting CEF archive: ${PRISMAUI_CEF_ARCHIVE}")
+_prismaui_cef_root_extracted(_PRISMAUI_CEF_ROOT_FOUND)
+if(NOT _PRISMAUI_CEF_ROOT_FOUND)
+    message(STATUS "Extracting CEF archive: ${_PRISMAUI_CEF_ARCHIVE}")
+    file(MAKE_DIRECTORY "${PRISMAUI_CEF_EXTRACT_DIR}")
     file(ARCHIVE_EXTRACT
-        INPUT "${PRISMAUI_CEF_ARCHIVE}"
+        INPUT "${_PRISMAUI_CEF_ARCHIVE}"
         DESTINATION "${PRISMAUI_CEF_EXTRACT_DIR}")
-    _prismaui_find_cef_root(_PRISMAUI_CEF_ROOT "${PRISMAUI_CEF_EXTRACT_DIR}")
+    _prismaui_cef_root_extracted(_PRISMAUI_CEF_ROOT_FOUND)
 endif()
 
-if(NOT _PRISMAUI_CEF_ROOT)
+if(NOT _PRISMAUI_CEF_ROOT_FOUND)
     message(FATAL_ERROR
-        "CEF extraction did not produce an expected binary distribution root under: ${PRISMAUI_CEF_EXTRACT_DIR}\n"
-        "Required files: cmake/FindCEF.cmake, include/cef_app.h, libcef_dll/CMakeLists.txt")
+        "CEF extraction did not produce the expected binary distribution root: ${_PRISMAUI_CEF_ROOT}\n"
+        "The archive must contain a top-level directory named after the archive file "
+        "(${_PRISMAUI_CEF_ROOT_NAME}) with cmake/FindCEF.cmake, include/cef_app.h, libcef_dll/CMakeLists.txt")
 endif()
 
 set(PRISMAUI_CEF_ROOT "${_PRISMAUI_CEF_ROOT}" CACHE PATH "Extracted CEF binary distribution root" FORCE)
@@ -110,7 +115,7 @@ foreach(_required_path IN LISTS _PRISMAUI_CEF_REQUIRED_PATHS)
     endif()
 endforeach()
 
-message(STATUS "PrismaUI CEF archive: ${PRISMAUI_CEF_ARCHIVE}")
+message(STATUS "PrismaUI CEF archive: ${_PRISMAUI_CEF_ARCHIVE}")
 message(STATUS "PrismaUI CEF root: ${CEF_ROOT}")
 
 list(APPEND CMAKE_MODULE_PATH "${CEF_ROOT}/cmake")

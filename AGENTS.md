@@ -1,6 +1,6 @@
 # PrismaUI Agent Notes
 
-This repository is an SKSE plugin for Skyrim that exposes a C API for mods to render HTML/CSS/JS UI through Chromium Embedded Framework (CEF). The core implementation is C++23, CommonLibSSE-NG, D3D11, DirectXTK `SpriteBatch`, and CEF 147 (Chromium 147). Ultralight is no longer used.
+This repository is an SKSE plugin for Skyrim that exposes a C API for mods to render HTML/CSS/JS UI through Chromium Embedded Framework (CEF). The core implementation is C++23, CommonLibSSE-NG, D3D11, DirectXTK `SpriteBatch`, and CEF 156 (Chromium 156). Ultralight is no longer used.
 
 ## Working Rules
 
@@ -28,13 +28,13 @@ This repository is an SKSE plugin for Skyrim that exposes a C API for mods to re
   - `cmake --build --preset=release --parallel 8`
 - `BuildRelease.ps1` exists as a convenience wrapper, but do not use it as the default build instruction.
 - Requires `VCPKG_ROOT`, Ninja, VS 2022 C++ tooling, and Node.js with `npm` on `PATH` (CMake `find_program(... npm ... REQUIRED)` fails configure without it).
-- The CEF binary archive `external/cef_binary_147.0.14+g76d2442+chromium-147.0.7727.138_windows64.tar.bz2` (or `PRISMAUI_CEF_ARCHIVE` pointing at an equivalent local archive) is downloaded automatically from `https://cef-builds.spotifycdn.com/` during configure when missing.
-- CMake extracts CEF to `build/external_builds/cef/<cef_binary_root>/`.
+- The CEF version is pinned by `PRISMAUI_CEF_VERSION` in `cmake/cef.cmake`. The binary archive `external/cef_binary_156.0.15+gcf671c0+chromium-156.0.8078.80_windows64.tar.bz2` is downloaded automatically from `https://cef-builds.spotifycdn.com/` during configure when missing. `PRISMAUI_CEF_ARCHIVE` (empty by default) overrides it with a local archive path.
+- CMake extracts CEF to `build/external_builds/cef/<archive name without .tar.bz2>/` and uses only that directory, so older extracted versions next to it are ignored.
 - Two targets are built:
   - `PrismaUI` (the SKSE plugin DLL) → `build/<preset>/bin/PrismaUI.dll`.
   - `PrismaUICefSubprocess` (the CEF helper executable) → `build/<preset>/bin/PrismaUICefSubprocess.exe`.
 - Distribution output: `dist/PrismaUI_<version>[_Debug]/`:
-  - `PrismaUI/libs/` — `libcef.dll`, `chrome_elf.dll`, `icudtl.dat`, `v8_context_snapshot.bin`, resource `.pak`s, `locales/`, ANGLE/SwiftShader/D3D support DLLs, and `PrismaUICefSubprocess.exe`.
+  - `PrismaUI/libs/` — `libcef.dll`, `chrome_elf.dll`, `icudtl.dat`, `v8_context_snapshot.bin`, resource `.pak`s, `locales/`, SwiftShader/Vulkan/D3D compiler support DLLs, and `PrismaUICefSubprocess.exe`. Since CEF 156 ANGLE is linked into `libcef.dll`; there is no `libEGL.dll`/`libGLESv2.dll`/`dxil.dll`.
   - `PrismaUI/shell/` — the CEF shell page, built from the `shell/app` TypeScript/Vite project into `shell/dist` and copied from there.
   - `SKSE/plugins/PrismaUI.dll`.
   - `NOTICES.txt` at the package root.
