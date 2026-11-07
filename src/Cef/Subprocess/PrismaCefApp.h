@@ -14,6 +14,9 @@ namespace PrismaUI::Cef {
         CefRefPtr<CefRenderProcessHandler> GetRenderProcessHandler() override;
 
     private:
+        // Turns off Chromium services and features PrismaUI views never use.
+        static void DisableUnusedFeatures(const CefRefPtr<CefCommandLine>& command_line);
+
         CefRefPtr<PrismaCefRenderApp> renderHandler_;
         // "<HighPart>,<LowPart>" decimal LUID forwarded to Chromium's GPU process via
         // the use-adapter-luid switch; empty when no specific adapter must be forced.

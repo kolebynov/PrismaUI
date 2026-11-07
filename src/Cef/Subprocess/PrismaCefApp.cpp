@@ -1,5 +1,7 @@
 #include "Cef/Subprocess/PrismaCefApp.h"
 
+#include <string>
+#include <string_view>
 #include <utility>
 
 #include "Cef/Subprocess/PrismaCefRenderApp.h"
@@ -46,6 +48,47 @@ namespace PrismaUI::Cef {
         if (!adapterLuidValue_.empty()) {
             command_line->AppendSwitchWithValue("use-adapter-luid", adapterLuidValue_);
         }
+
+        DisableUnusedFeatures(command_line);
+    }
+
+    namespace {
+        // Chromium honors only the last value of a comma-list switch such as --disable-features, so
+        // merge with whatever CEF or the user already passed.
+        void AppendListSwitch(const CefRefPtr<CefCommandLine>& command_line, const char* name,
+                              std::string_view values) {
+            std::string merged = command_line->GetSwitchValue(name).ToString();
+            if (!merged.empty()) {
+                merged.push_back(',');
+            }
+            merged.append(values);
+            command_line->AppendSwitchWithValue(name, merged);
+        }
+    }
+
+    void PrismaCefApp::DisableUnusedFeatures(const CefRefPtr<CefCommandLine>& command_line) {
+        // Background services that would otherwise phone home or start threads inside the game.
+        command_line->AppendSwitch("disable-background-networking");
+        command_line->AppendSwitch("disable-component-update");
+        command_line->AppendSwitch("disable-extensions");
+        command_line->AppendSwitch("disable-speech-api");
+        command_line->AppendSwitch("disable-sync");
+        command_line->AppendSwitch("disable-default-apps");
+        command_line->AppendSwitch("disable-domain-reliability");
+        command_line->AppendSwitch("no-first-run");
+
+        // WebRTC is compiled into libcef and has no runtime kill switch (deleting the JS globals in
+        // OnContextCreated does not stick: Blink reinstalls RTCDataChannel before page scripts run).
+        // Forbid every non-proxied UDP socket so peer connections cannot be established and local
+        // IPs never leak; camera/microphone access is denied by CefOsrClient's permission handler.
+        command_line->AppendSwitchWithValue("webrtc-ip-handling-policy", "disable_non_proxied_udp");
+
+        // HardwareMediaKeyHandling: Chromium otherwise grabs the system Play/Pause keys from the
+        // user's media player whenever a view plays audio. The rest are Cast discovery and
+        // Google service clients.
+        AppendListSwitch(command_line, "disable-features",
+                         "HardwareMediaKeyHandling,GlobalMediaControls,MediaRouter,DialMediaRouteProvider,Translate,"
+                         "OptimizationHints,AutofillServerCommunication");
     }
 
     CefRefPtr<CefRenderProcessHandler> PrismaCefApp::GetRenderProcessHandler() { return renderHandler_; }

@@ -13,6 +13,7 @@
 #include "include/cef_display_handler.h"
 #include "include/cef_life_span_handler.h"
 #include "include/cef_load_handler.h"
+#include "include/cef_permission_handler.h"
 #include "include/cef_render_handler.h"
 
 namespace PrismaUI::Cef {
@@ -21,7 +22,8 @@ namespace PrismaUI::Cef {
                                public CefLifeSpanHandler,
                                public CefLoadHandler,
                                public CefDisplayHandler,
-                               public CefContextMenuHandler {
+                               public CefContextMenuHandler,
+                               public CefPermissionHandler {
     public:
         CefOsrClient(uint32_t width, uint32_t height);
 
@@ -30,6 +32,7 @@ namespace PrismaUI::Cef {
         CefRefPtr<CefLoadHandler> GetLoadHandler() override { return this; }
         CefRefPtr<CefDisplayHandler> GetDisplayHandler() override { return this; }
         CefRefPtr<CefContextMenuHandler> GetContextMenuHandler() override { return this; }
+        CefRefPtr<CefPermissionHandler> GetPermissionHandler() override { return this; }
 
         bool HasBrowser() const;
         void SetSize(uint32_t width, uint32_t height);
@@ -53,6 +56,13 @@ namespace PrismaUI::Cef {
 
         void OnBeforeContextMenu(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame,
                                  CefRefPtr<CefContextMenuParams> params, CefRefPtr<CefMenuModel> model) override;
+        // Views never get camera/microphone/screen capture or any prompt-gated permission.
+        bool OnRequestMediaAccessPermission(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame,
+                                            const CefString& requestingOrigin, uint32_t requestedPermissions,
+                                            CefRefPtr<CefMediaAccessCallback> callback) override;
+        bool OnShowPermissionPrompt(CefRefPtr<CefBrowser> browser, uint64_t promptId, const CefString& requestingOrigin,
+                                    uint32_t requestedPermissions,
+                                    CefRefPtr<CefPermissionPromptCallback> callback) override;
         bool OnConsoleMessage(CefRefPtr<CefBrowser> browser, cef_log_severity_t level, const CefString& message,
                               const CefString& source, int line) override;
         void OnLoadingStateChange(CefRefPtr<CefBrowser> browser, bool isLoading, bool canGoBack,

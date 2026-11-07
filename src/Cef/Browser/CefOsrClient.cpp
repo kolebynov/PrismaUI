@@ -186,6 +186,24 @@ namespace PrismaUI::Cef {
         }
     }
 
+    bool CefOsrClient::OnRequestMediaAccessPermission(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame>,
+                                                      const CefString& requestingOrigin, uint32_t requestedPermissions,
+                                                      CefRefPtr<CefMediaAccessCallback> callback) {
+        logger::info("CEF media access denied for origin '{}' (permissions 0x{:X}).", requestingOrigin.ToString(),
+                     requestedPermissions);
+        callback->Cancel();
+        return true;
+    }
+
+    bool CefOsrClient::OnShowPermissionPrompt(CefRefPtr<CefBrowser>, uint64_t, const CefString& requestingOrigin,
+                                              uint32_t requestedPermissions,
+                                              CefRefPtr<CefPermissionPromptCallback> callback) {
+        logger::info("CEF permission prompt denied for origin '{}' (permissions 0x{:X}).", requestingOrigin.ToString(),
+                     requestedPermissions);
+        callback->Continue(CEF_PERMISSION_RESULT_DENY);
+        return true;
+    }
+
     bool CefOsrClient::OnConsoleMessage(CefRefPtr<CefBrowser> browser, cef_log_severity_t level,
                                         const CefString& message, const CefString& /*source*/, int /*line*/) {
         const int browserId = browser ? browser->GetIdentifier() : -1;

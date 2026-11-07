@@ -39,6 +39,7 @@
 #include "Utils/DllLoader.h"
 #include "include/cef_app.h"
 #include "include/cef_browser.h"
+#include "include/cef_request_context.h"
 #include "include/cef_task.h"
 #include "include/wrapper/cef_helpers.h"
 
@@ -59,6 +60,38 @@ namespace {
             result.push_back(ch >= 0 && ch <= 0x7F ? static_cast<char>(ch) : '?');
         }
         return result;
+    }
+
+    // Profile preferences for features PrismaUI views never need. CEF 156 has no command-line
+    // switch for spellchecking or the PDF viewer, so they are turned off through the global
+    // request context. Must run on the CEF UI thread after CefInitialize.
+    void DisableUnusedProfileFeatures() {
+        CEF_REQUIRE_UI_THREAD();
+
+        CefRefPtr<CefRequestContext> requestContext = CefRequestContext::GetGlobalContext();
+        if (!requestContext) {
+            logger::warn("CEF global request context unavailable; profile features left at defaults.");
+            return;
+        }
+
+        const auto setPreference = [&requestContext](const char* name, CefRefPtr<CefValue> value) {
+            CefString error;
+            if (!requestContext->SetPreference(name, value, error)) {
+                logger::warn("CEF preference '{}' not set: {}", name, error.ToString());
+            }
+        };
+
+        const auto makeBool = [](bool flag) {
+            CefRefPtr<CefValue> value = CefValue::Create();
+            value->SetBool(flag);
+            return value;
+        };
+
+        // Spellchecker would otherwise download Hunspell dictionaries for every text input.
+        setPreference("browser.enable_spellchecking", makeBool(false));
+        setPreference("spellcheck.use_spelling_service", makeBool(false));
+        // Never load the built-in PDF viewer extension.
+        setPreference("plugins.always_open_pdf_externally", makeBool(true));
     }
 
     // Derives the "<HighPart>,<LowPart>" decimal LUID of the DXGI adapter backing
@@ -418,6 +451,8 @@ namespace PrismaUI::Cef {
 
         logger::info("Scheduling CEF OSR browser creation at {}x{}.", width, height);
         PostToCefUi([this, shellUrl] {
+            DisableUnusedProfileFeatures();
+
             CefWindowInfo windowInfo;
             windowInfo.SetAsWindowless(_impl->hwnd);
             windowInfo.shared_texture_enabled = true;
